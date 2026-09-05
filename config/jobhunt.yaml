@@ -13,7 +13,8 @@ schedule:
   slot_grace_minutes: 120
 
 matching:
-  minimum_score: 80
+  # lowered from 80 to 70 by the candidate on 2026-09-05 after the first cycle's calibration
+  minimum_score: 70
   scoring_version: "1.0"
   # weights are renormalized over the factors that apply to a given job
   weights:

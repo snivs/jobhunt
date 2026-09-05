@@ -6,6 +6,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -42,10 +43,35 @@ import { listSources, requireSource, syncSources } from "../db/repositories/sour
 import { errorToString, Logger } from "../logging/index.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const config = loadConfig({ rootDir });
+let config = loadConfig({ rootDir });
+let configMtime = safeMtime(config.configPath);
 const db = openDatabase({ dbPath: config.database.path });
 syncSources(db, config.sources);
 seedSkillAliases(db);
+
+function safeMtime(file: string): number {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/** Hot-reloads config/jobhunt.yaml when it changes on disk, so threshold/weight/source edits apply without restarting the server. */
+function refreshConfig(): void {
+  const mtime = safeMtime(config.configPath);
+  if (mtime === configMtime) return;
+  try {
+    const next = loadConfig({ rootDir });
+    config = next;
+    configMtime = mtime;
+    syncSources(db, config.sources);
+    logger.info("config reloaded", { path: config.configPath });
+  } catch (err) {
+    logger.error("config reload failed; keeping previous config", { error: errorToString(err) });
+    configMtime = mtime;
+  }
+}
 const logger = new Logger({ dir: config.logging.dir, level: config.logging.level, component: "mcp", stderr: process.env.JOBHUNT_LOG_STDERR === "1" });
 
 const server = new McpServer({ name: "jobhunt-db", version: "0.1.0" });
@@ -58,6 +84,7 @@ type ToolCallback = Parameters<typeof server.registerTool>[2];
 function tool<S extends Shape>(name: string, description: string, shape: S, handler: (args: z.infer<z.ZodObject<S>>) => unknown): void {
   const callback = async (args: z.infer<z.ZodObject<S>>) => {
     try {
+      refreshConfig();
       const result = handler(args);
       return ok(result);
     } catch (err) {
