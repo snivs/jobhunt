@@ -1,0 +1,30 @@
+# dependencies / build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# runtime data (never commit databases, logs or state)
+data/
+logs/
+state/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# the Obsidian vault is versioned as its own git repository
+vault/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json

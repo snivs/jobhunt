@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "jobhunt-db": {
+      "command": "node",
+      "args": ["./dist/mcp/server.js"],
+      "env": {
+        "JOBHUNT_LOG_STDERR": "0"
+      }
+    }
+  }
+}

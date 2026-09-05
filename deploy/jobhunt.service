@@ -1,0 +1,27 @@
+[Unit]
+Description=Autonomous Job Hunter - one full pipeline cycle (Claude Code headless)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=jobhunt
+Group=jobhunt
+WorkingDirectory=/srv/jobhunt
+Environment=HOME=/home/jobhunt
+Environment=TZ=America/Chihuahua
+Environment=PATH=/home/jobhunt/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/srv/jobhunt/.env
+ExecStart=/srv/jobhunt/deploy/run-cycle.sh scheduled
+TimeoutStartSec=90min
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/jobhunt /home/jobhunt/.claude /home/jobhunt/.config
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Autonomous Job Hunter schedule (Mon-Fri 07:00, 13:00, 19:00 America/Chihuahua)
+
+[Timer]
+# Keep in sync with schedule.times / schedule.days in config/jobhunt.yaml
+OnCalendar=Mon..Fri *-*-* 07,13,19:00:00 America/Chihuahua
+Persistent=true
+RandomizedDelaySec=120
+Unit=jobhunt.service
+
+[Install]
+WantedBy=timers.target
