@@ -285,34 +285,54 @@ interface CompensationScore extends Partial {
   belowMinimum: boolean;
 }
 
-function scoreCompensation(profile: CandidateProfile, job: JobAnalysis, undisclosedScore: number): CompensationScore {
+export type FxRates = Record<string, number>;
+
+/** Converts an amount between currencies using FROM_TO (or the inverse TO_FROM) rates. Null when no rate is known. */
+export function convertCurrency(amount: number, from: string, to: string, fxRates: FxRates = {}): number | null {
+  const f = from.toUpperCase();
+  const t = to.toUpperCase();
+  if (f === t) return amount;
+  const direct = fxRates[`${f}_${t}`];
+  if (direct) return amount * direct;
+  const inverse = fxRates[`${t}_${f}`];
+  if (inverse) return amount / inverse;
+  return null;
+}
+
+function scoreCompensation(profile: CandidateProfile, job: JobAnalysis, undisclosedScore: number, fxRates: FxRates = {}): CompensationScore {
   const comp = job.compensation;
   if (!comp || (comp.min == null && comp.max == null)) {
     return { factor: "compensation_match", score: undisclosedScore, applicable: true, explanation: "Salary not disclosed", undisclosed: true, belowMinimum: false };
   }
-  const currency = (comp.currency ?? profile.compensation.currency).toUpperCase();
-  const sameCurrency = currency === profile.compensation.currency.toUpperCase();
-  const jobMaxAnnual = toAnnual(comp.max ?? comp.min ?? 0, comp.period);
-  const jobMinAnnual = toAnnual(comp.min ?? comp.max ?? 0, comp.period);
-  const myMin = profile.compensation.minimum != null ? toAnnual(profile.compensation.minimum, profile.compensation.period) : null;
-  const myTarget = profile.compensation.target != null ? toAnnual(profile.compensation.target, profile.compensation.period) : myMin;
+  const jobCurrency = (comp.currency ?? profile.compensation.currency).toUpperCase();
+  const myCurrency = profile.compensation.currency.toUpperCase();
   const kind = comp.explicit ? "Explicit" : "Expected";
-  if (!sameCurrency) {
+  const rawMax = toAnnual(comp.max ?? comp.min ?? 0, comp.period);
+  const rawMin = toAnnual(comp.min ?? comp.max ?? 0, comp.period);
+  const convertedMax = convertCurrency(rawMax, jobCurrency, myCurrency, fxRates);
+  const convertedMin = convertCurrency(rawMin, jobCurrency, myCurrency, fxRates);
+  if (convertedMax == null || convertedMin == null) {
     return {
       factor: "compensation_match",
       score: 65,
       applicable: true,
-      explanation: `${kind} range in ${currency}; candidate targets ${profile.compensation.currency}, not compared automatically`,
+      explanation: `${kind} range in ${jobCurrency}; candidate targets ${myCurrency} and no fx rate is configured, not compared automatically`,
       undisclosed: false,
       belowMinimum: false,
     };
   }
+  const jobMaxAnnual = Math.round(convertedMax);
+  const jobMinAnnual = Math.round(convertedMin);
+  const currency = myCurrency;
+  const converted = jobCurrency !== myCurrency ? ` (converted from ${rawMin.toLocaleString("en-US")}-${rawMax.toLocaleString("en-US")} ${jobCurrency}/year)` : "";
+  const myMin = profile.compensation.minimum != null ? toAnnual(profile.compensation.minimum, profile.compensation.period) : null;
+  const myTarget = profile.compensation.target != null ? toAnnual(profile.compensation.target, profile.compensation.period) : myMin;
   if (myMin != null && jobMaxAnnual < myMin) {
     return {
       factor: "compensation_match",
       score: 0,
       applicable: true,
-      explanation: `${kind} max ${jobMaxAnnual.toLocaleString("en-US")} ${currency}/year below minimum ${myMin.toLocaleString("en-US")}`,
+      explanation: `${kind} max ${jobMaxAnnual.toLocaleString("en-US")} ${currency}/year below minimum ${myMin.toLocaleString("en-US")}${converted}`,
       undisclosed: false,
       belowMinimum: true,
     };
@@ -328,7 +348,7 @@ function scoreCompensation(profile: CandidateProfile, job: JobAnalysis, undisclo
     factor: "compensation_match",
     score,
     applicable: true,
-    explanation: `${kind} ${jobMinAnnual.toLocaleString("en-US")}-${jobMaxAnnual.toLocaleString("en-US")} ${currency}/year vs target ${myTarget.toLocaleString("en-US")}`,
+    explanation: `${kind} ${jobMinAnnual.toLocaleString("en-US")}-${jobMaxAnnual.toLocaleString("en-US")} ${currency}/year vs target ${myTarget.toLocaleString("en-US")}${converted}`,
     undisclosed: false,
     belowMinimum: false,
   };
@@ -442,12 +462,14 @@ export interface ScoringOptions {
   minimumScore: number;
   undisclosedCompensationScore: number;
   scoringVersion: string;
+  /** FROM_TO exchange rates (e.g. USD_MXN) used to compare salaries across currencies */
+  fxRates?: FxRates;
 }
 
 /** Explainable, weighted scoring. Weights are renormalized over applicable factors. */
 export function scoreJob(profile: CandidateProfile, job: JobAnalysis, options: ScoringOptions): MatchResult {
   const required = scoreRequiredSkills(profile, job);
-  const comp = scoreCompensation(profile, job, options.undisclosedCompensationScore);
+  const comp = scoreCompensation(profile, job, options.undisclosedCompensationScore, options.fxRates ?? {});
   const partials: Partial[] = [
     scoreTechnical(profile, job),
     required,

@@ -30,6 +30,14 @@ matching:
     preference_match: 0.05
   # score assigned to compensation_match when the posting has no salary information
   undisclosed_compensation_score: 60
+  # exchange rates used ONLY to compare published ranges against the candidate's currency.
+  # Key format: FROM_TO. Refresh them periodically (as of 2026-09, approximate mid-market).
+  fx_rates:
+    USD_MXN: 18.5
+    EUR_MXN: 20.5
+    GBP_MXN: 23.5
+    CAD_MXN: 13.5
+    USD_EUR: 0.90
 
 applications:
   max_per_source_per_run: 3
@@ -135,12 +143,11 @@ sources:
     kind: career_page
     enabled: true
     automation_policy: discover_only
+    # AMD uses iCIMS (careers-amd.icims.com), not Workday: no adapter yet, manual review.
     boards:
       - nvidia.wd5/NVIDIAExternalCareerSite
-      - amd.wd1/External
     options:
       "company:nvidia.wd5/NVIDIAExternalCareerSite": NVIDIA
-      "company:amd.wd1/External": AMD
       max_per_board: 40
       fetch_details: true
     rate_limits: { requests_per_second: 0.5, requests_per_minute: 20, requests_per_hour: 200, concurrency: 1 }
@@ -163,7 +170,10 @@ sources:
     enabled: true
     automation_policy: discover_only
     base_url: https://boards-api.greenhouse.io/v1/boards
-    boards: []
+    boards:
+      - sourcegraph91
+    options:
+      "company:sourcegraph91": Sourcegraph
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 2 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
   - key: lever
@@ -181,7 +191,14 @@ sources:
     enabled: true
     automation_policy: discover_only
     base_url: https://api.ashbyhq.com/posting-api/job-board
-    boards: []
+    boards:
+      - livekit
+      - colonist
+      - ashby
+    options:
+      "company:livekit": LiveKit
+      "company:colonist": Colonist
+      "company:ashby": Ashby
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 2 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
   # Platforms whose terms prohibit third-party automation: discovery may only happen through

@@ -93,12 +93,12 @@ describe("source adapters and discovery runner", () => {
       return { status: 500, body: "boom" };
     });
     try {
-      const summaries = await runDiscovery(db, config, { runId: run.id, sourceKeys: ["remotive", "arbeitnow", "greenhouse", "linkedin"], terms: ["typescript"], logger, expireDays: 0 });
+      const summaries = await runDiscovery(db, config, { runId: run.id, sourceKeys: ["remotive", "arbeitnow", "lever", "linkedin"], terms: ["typescript"], logger, expireDays: 0 });
       const byKey = Object.fromEntries(summaries.map((s) => [s.source, s]));
       expect(byKey.remotive).toMatchObject({ status: "success", jobs_found: 1, jobs_new: 1, compensation_recorded: 1 });
       expect(byKey.arbeitnow?.status).toBe("failed");
       expect(byKey.arbeitnow?.retry_count).toBeGreaterThan(0);
-      expect(byKey.greenhouse).toMatchObject({ status: "skipped", error: "no boards configured" });
+      expect(byKey.lever).toMatchObject({ status: "skipped", error: "no boards configured" });
       expect(byKey.linkedin?.status).toBe("blocked");
       expect(countJobs(db).canonical).toBe(1);
       const view = getRun(db, run.id)!;

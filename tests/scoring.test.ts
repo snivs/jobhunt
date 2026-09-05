@@ -76,11 +76,24 @@ describe("explainable scoring", () => {
     expect(worldwide.factors.find((f) => f.factor === "location_match")?.score).toBe(100);
   });
 
-  it("does not compare compensation across currencies automatically", () => {
-    const r = scoreJob(sampleProfile(), sampleAnalysis({ compensation: { min: 60000, max: 80000, currency: "EUR", period: "year", explicit: true } }), options);
+  it("does not compare compensation across currencies without an fx rate", () => {
+    const r = scoreJob(sampleProfile(), sampleAnalysis({ compensation: { min: 60000, max: 80000, currency: "EUR", period: "year", explicit: true } }), { ...options, fxRates: {} });
     const comp = r.factors.find((f) => f.factor === "compensation_match")!;
     expect(comp.score).toBe(65);
     expect(comp.explanation).toMatch(/not compared/);
     expect(r.hardConstraintFailures).toEqual([]);
+  });
+
+  it("converts compensation with configured fx rates (direct and inverse)", () => {
+    const mxnProfile = sampleProfile({ compensation: { minimum: 70000, target: 90000, currency: "MXN", period: "month" }, hardConstraints: [{ type: "min_salary", amount: 70000, currency: "MXN", period: "month" }] });
+    const usd = scoreJob(mxnProfile, sampleAnalysis({ compensation: { min: 150000, max: 200000, currency: "USD", period: "year", explicit: true } }), { ...options, fxRates: { USD_MXN: 18.5 } });
+    const comp = usd.factors.find((f) => f.factor === "compensation_match")!;
+    expect(comp.score).toBe(100); // 150k USD = 2.775M MXN/yr > 1.08M target
+    expect(comp.explanation).toMatch(/converted from/);
+    const low = scoreJob(mxnProfile, sampleAnalysis({ compensation: { min: 20000, max: 30000, currency: "USD", period: "year", explicit: true } }), { ...options, fxRates: { USD_MXN: 18.5 } });
+    expect(low.eligible).toBe(false);
+    expect(low.hardConstraintFailures[0]).toMatch(/below minimum/);
+    const inverse = scoreJob(mxnProfile, sampleAnalysis({ compensation: { min: 150000, max: 200000, currency: "USD", period: "year", explicit: true } }), { ...options, fxRates: { MXN_USD: 0.054 } });
+    expect(inverse.factors.find((f) => f.factor === "compensation_match")!.score).toBe(100);
   });
 });

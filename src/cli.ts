@@ -22,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config/index.js";
 import { getLock, PIPELINE_LOCK, releaseLock } from "./core/lock.js";
+import { rescorePending } from "./core/rescore.js";
 import { getScheduleStatus, recoverInterruptedRuns } from "./core/run-manager.js";
 import { daysAgoIso, nowIso } from "./core/time.js";
 import { fromJson, migrationStatus, openDatabase } from "./db/index.js";
@@ -161,6 +162,10 @@ async function main(argv: string[]): Promise<number> {
           logger,
         });
         print({ run_id: runId, sources: summaries, totals: { jobs_found: summaries.reduce((a, s) => a + s.jobs_found, 0), jobs_new: summaries.reduce((a, s) => a + s.jobs_new, 0), jobs_updated: summaries.reduce((a, s) => a + s.jobs_updated, 0), jobs_deduplicated: summaries.reduce((a, s) => a + s.jobs_deduplicated, 0), failed: summaries.filter((s) => s.status === "failed").map((s) => s.source) } });
+        return 0;
+      }
+      case "rescore": {
+        print(rescorePending(db, config, { runId: num(flags["run-id"]) ?? null, limit: num(flags.limit) }));
         return 0;
       }
       case "verify-job": {

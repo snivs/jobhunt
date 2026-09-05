@@ -64,6 +64,7 @@ export const configSchema = z.object({
     scoring_version: z.string().default("1.0"),
     weights: weightsSchema,
     undisclosed_compensation_score: z.number().min(0).max(100).default(60),
+    fx_rates: z.record(z.string(), z.number().positive()).default({}),
   }),
   applications: z.object({
     max_per_source_per_run: z.number().int().positive().default(3),

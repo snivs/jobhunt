@@ -20,19 +20,33 @@ interface HnItem {
  * Parses the conventional first line of a "Who is hiring" comment:
  * "Company | Role | Location | REMOTE | Full-time | $150k-$200k".
  */
+const ROLE_WORDS = /\b(engineer|engineering|developer|dev|architect|lead|cto|founder|founding|scientist|manager|head of|director|programmer|sre|devops|designer|analyst|product|staff|principal|swe|full[- ]?stack|backend|frontend|back-end|front-end|ml|ai)\b/i;
+const MODE_WORDS = /^(remote|onsite|on-site|hybrid|in[- ]office|full[- ]time|part[- ]time|contract|contractor|freelance|intern(ship)?|visa|equity|salary|\$|€|£)/i;
+
+/**
+ * Parses the conventional first line of a "Who is hiring" comment. The order of segments varies
+ * (Company | Role | Location, Company | Location | Role, Company | URL | Role ...), so each segment
+ * is classified rather than taken positionally. Segments are capped so a sentence never becomes a title.
+ */
 export function parseHiringComment(text: string): { company: string | null; title: string | null; location: string | null; remote: boolean; salaryText: string | null } {
   const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
-  const parts = firstLine.split("|").map((p) => p.trim()).filter(Boolean);
+  const parts = firstLine
+    .split("|")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => (p.length > 140 ? p.slice(0, 140) : p));
   const remote = /\bremote\b/i.test(firstLine);
   const salary = parts.find((p) => /[$€£]\s?\d|\d+\s?k\b/i.test(p)) ?? null;
-  const locationIdx = parts.findIndex((p, i) => i > 1 && !/remote|onsite|on-site|hybrid|full[- ]time|part[- ]time|contract|visa|\$/i.test(p));
-  return {
-    company: parts[0] ?? null,
-    title: parts[1] ?? null,
-    location: locationIdx >= 0 ? (parts[locationIdx] ?? null) : remote ? "Remote" : null,
-    remote,
-    salaryText: salary,
-  };
+  const isUrl = (p: string) => /^(https?:\/\/|www\.)/i.test(p) || /^[a-z0-9.-]+\.(com|io|ai|dev|co|org|net|fm|app)(\/|$)/i.test(p);
+  const company = parts[0] && !isUrl(parts[0]) ? parts[0] : (parts.find((p) => !isUrl(p)) ?? null);
+  const rest = parts.filter((p) => p !== company);
+  const roleCandidates = rest.filter((p) => !isUrl(p) && ROLE_WORDS.test(p) && !MODE_WORDS.test(p) && p.length <= 140);
+  // Prefer the shortest role-looking segment: long ones are usually pitch sentences that happen to contain "engineer".
+  const title = roleCandidates.sort((a, b) => a.length - b.length)[0] ?? null;
+  const location =
+    rest.find((p) => p !== title && !isUrl(p) && !MODE_WORDS.test(p) && !ROLE_WORDS.test(p) && p.length <= 60 && !/[$€£]\s?\d|\d+\s?k\b/i.test(p)) ??
+    (remote ? "Remote" : null);
+  return { company, title, location, remote, salaryText: salary };
 }
 
 /** Official HN Algolia API (https://hn.algolia.com/api): latest "Ask HN: Who is hiring?" thread. */

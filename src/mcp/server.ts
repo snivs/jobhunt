@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { loadConfig } from "../config/index.js";
 import { ingestRawJob } from "../core/ingest.js";
+import { rescorePending, scoringOptionsFromConfig } from "../core/rescore.js";
 import { finishPipelineRun, getScheduleStatus, heartbeatPipeline, startPipelineRun } from "../core/run-manager.js";
 import { explainMatch, scoreJob, type JobAnalysis, type JobSkillRequirement } from "../core/scoring.js";
 import { APPLICATION_STATES } from "../core/state-machine.js";
@@ -515,15 +516,16 @@ tool(
     if (a.remote_scope !== undefined && a.remote_scope !== job.remote_scope) patch.remote_scope = a.remote_scope;
     if (a.employment_type && a.employment_type !== job.employment_type) patch.employment_type = a.employment_type;
     if (Object.keys(patch).length) updateJob(db, job.id, patch);
-    const result = scoreJob(profile, analysis, {
-      weights: config.matching.weights,
-      minimumScore: config.matching.minimum_score,
-      undisclosedCompensationScore: config.matching.undisclosed_compensation_score,
-      scoringVersion: config.matching.scoring_version,
-    });
+    const result = scoreJob(profile, analysis, scoringOptionsFromConfig(config));
     const match = recordMatch(db, { jobId: job.id, profileVersion: profile.version, result, analysis, runId: a.run_id ?? null });
     return { match, explanation: explainMatch(result) };
   },
+);
+tool(
+  "rescore_pending",
+  "Re-score every active job whose stored analysis predates the current profile version or scoring version (after profile edits, weight or fx changes). Uses the stored structured analysis; never re-reads postings.",
+  { run_id: z.number().int().nullable().optional(), limit: z.number().int().optional() },
+  (a) => rescorePending(db, config, { runId: a.run_id, limit: a.limit }),
 );
 tool("get_job_match", "Latest match for a job plus its scoring history.", { job_id: z.number().int() }, (a) => ({ latest: getLatestMatch(db, a.job_id), history: getMatchHistory(db, a.job_id) }));
 tool(

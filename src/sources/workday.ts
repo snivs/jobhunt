@@ -45,6 +45,7 @@ export const workday: JobSource = {
   key: "workday",
   async fetch(ctx: SourceContext): Promise<RawJob[]> {
     const out: RawJob[] = [];
+    const boardErrors: string[] = [];
     const perBoard = Number(ctx.config.options.max_per_board ?? 40);
     const withDetails = ctx.config.options.fetch_details !== false;
     for (const board of ctx.config.boards) {
@@ -58,11 +59,19 @@ export const workday: JobSource = {
       const seen = new Set<string>();
       for (const q of queries) {
         const body = JSON.stringify({ appliedFacets: {}, limit: 20, offset: 0, searchText: q });
-        const data = await ctx.http.getJson<{ total?: number; jobPostings?: WorkdayListing[] }>(`${parsed.host}/wday/cxs/${parsed.tenant}/${parsed.site}/jobs`, {
-          method: "POST",
-          body,
-          headers: { "Content-Type": "application/json" },
-        });
+        let data: { total?: number; jobPostings?: WorkdayListing[] };
+        try {
+          data = await ctx.http.getJson<{ total?: number; jobPostings?: WorkdayListing[] }>(`${parsed.host}/wday/cxs/${parsed.tenant}/${parsed.site}/jobs`, {
+            method: "POST",
+            body,
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+          });
+        } catch (err) {
+          // One board failing (wrong site name, 422, outage) must not lose the other boards' results.
+          ctx.logger.warn("workday board query failed", { board, query: q, error: err instanceof Error ? err.message : String(err) });
+          boardErrors.push(`${board}: ${err instanceof Error ? err.message.slice(0, 160) : String(err)}`);
+          break;
+        }
         for (const j of data.jobPostings ?? []) {
           if (seen.has(j.externalPath)) continue;
           seen.add(j.externalPath);
@@ -96,6 +105,8 @@ export const workday: JobSource = {
         if (seen.size >= perBoard || out.length >= ctx.limit) break;
       }
     }
+    if (out.length === 0 && boardErrors.length > 0) throw new Error(`All Workday boards failed: ${boardErrors.join(" | ")}`);
+    if (boardErrors.length > 0) ctx.logger.warn("some workday boards failed", { errors: boardErrors });
     return out.slice(0, ctx.limit);
   },
   async verify(ctx, job) {
