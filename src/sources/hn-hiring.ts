@@ -38,7 +38,10 @@ export function parseHiringComment(text: string): { company: string | null; titl
   const remote = /\bremote\b/i.test(firstLine);
   const salary = parts.find((p) => /[$€£]\s?\d|\d+\s?k\b/i.test(p)) ?? null;
   const isUrl = (p: string) => /^(https?:\/\/|www\.)/i.test(p) || /^[a-z0-9.-]+\.(com|io|ai|dev|co|org|net|fm|app)(\/|$)/i.test(p);
-  const company = parts[0] && !isUrl(parts[0]) ? parts[0] : (parts.find((p) => !isUrl(p)) ?? null);
+  // The first segment is the company by convention, even when it is a bare domain ("Matcha.fm");
+  // only a full URL (http://..., www....) in first position is skipped.
+  const isFullUrl = (p: string) => /^(https?:\/\/|www\.)/i.test(p);
+  const company = parts[0] && !isFullUrl(parts[0]) ? parts[0] : (parts.find((p) => !isUrl(p)) ?? null);
   const rest = parts.filter((p) => p !== company);
   const roleCandidates = rest.filter((p) => !isUrl(p) && ROLE_WORDS.test(p) && !MODE_WORDS.test(p) && p.length <= 140);
   // Prefer the shortest role-looking segment: long ones are usually pitch sentences that happen to contain "engineer".
