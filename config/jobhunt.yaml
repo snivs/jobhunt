@@ -104,6 +104,57 @@ sources:
     base_url: https://hn.algolia.com/api/v1
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 300, concurrency: 1 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
+  - key: weworkremotely
+    name: We Work Remotely
+    kind: api
+    enabled: true
+    automation_policy: discover_only
+    base_url: https://weworkremotely.com/remote-jobs.rss
+    options:
+      feeds:
+        - https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss
+        - https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss
+        - https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss
+        - https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss
+        - https://weworkremotely.com/remote-jobs.rss
+    rate_limits: { requests_per_second: 0.5, requests_per_minute: 10, requests_per_hour: 60, concurrency: 1 }
+    retry: { max_retries: 2, initial_backoff_ms: 2000, backoff_multiplier: 2, max_backoff_ms: 30000 }
+  - key: himalayas
+    name: Himalayas
+    kind: api
+    enabled: true
+    automation_policy: discover_only
+    base_url: https://himalayas.app/jobs/api
+    options: { max_pages: 5, page_size: 100 }
+    rate_limits: { requests_per_second: 0.5, requests_per_minute: 10, requests_per_hour: 100, concurrency: 1 }
+    retry: { max_retries: 3, initial_backoff_ms: 2000, backoff_multiplier: 2, max_backoff_ms: 30000 }
+  # Workday-hosted career sites of large tech companies (public, read-only JSON used by the sites
+  # themselves; low volume). Board format: tenant.wdN/SiteName. Add companies as you confirm them.
+  - key: workday
+    name: Workday career sites
+    kind: career_page
+    enabled: true
+    automation_policy: discover_only
+    boards:
+      - nvidia.wd5/NVIDIAExternalCareerSite
+      - amd.wd1/External
+    options:
+      "company:nvidia.wd5/NVIDIAExternalCareerSite": NVIDIA
+      "company:amd.wd1/External": AMD
+      max_per_board: 40
+      fetch_details: true
+    rate_limits: { requests_per_second: 0.5, requests_per_minute: 20, requests_per_hour: 200, concurrency: 1 }
+    retry: { max_retries: 2, initial_backoff_ms: 3000, backoff_multiplier: 2, max_backoff_ms: 30000 }
+  # amazon.jobs exposes a JSON search endpoint, but Amazon's Conditions of Use prohibit robots and
+  # data-gathering tools. Kept disabled and adapter-less on purpose: discovery there is manual.
+  - key: amazon_jobs
+    name: Amazon Jobs (manual only)
+    kind: career_page
+    enabled: false
+    automation_policy: discover_only
+    base_url: https://www.amazon.jobs
+    rate_limits: { requests_per_second: 0, requests_per_minute: 0, requests_per_hour: 0, concurrency: 0 }
+    retry: { max_retries: 0, initial_backoff_ms: 0, backoff_multiplier: 1, max_backoff_ms: 0 }
   # ATS boards (Greenhouse / Lever / Ashby) are official public job-board APIs.
   # Company board tokens are added after the interview (target companies list).
   - key: greenhouse
