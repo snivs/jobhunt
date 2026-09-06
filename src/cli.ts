@@ -14,20 +14,22 @@
  *   profile:status                   whether the candidate profile/interview exists
  *   stats [--days n]                 market + application statistics
  *   discover --run-id <id> [--source key] [--query "a,b"] [--limit n] [--expire-days d] [--all]
- *   verify-job --job-id <id>         re-check a posting through its source adapter
+ *   job:show <id|VAC-run.job>        one job with its match and application (short code or numeric id)
+ *   verify-job --job-id <id|code>    re-check a posting through its source adapter
  *   submit --application-id <id> --run-id <id>   submit through a permitted adapter (apply_allowed only)
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config/index.js";
+import { getLatestMatch } from "./db/repositories/matches.js";
 import { getLock, PIPELINE_LOCK, releaseLock } from "./core/lock.js";
 import { rescorePending } from "./core/rescore.js";
 import { getScheduleStatus, recoverInterruptedRuns } from "./core/run-manager.js";
 import { daysAgoIso, nowIso } from "./core/time.js";
 import { fromJson, migrationStatus, openDatabase } from "./db/index.js";
-import { getApplication } from "./db/repositories/applications.js";
-import { getJob } from "./db/repositories/jobs.js";
+import { getApplication, getApplicationByJob } from "./db/repositories/applications.js";
+import { getJob, resolveJob } from "./db/repositories/jobs.js";
 import { getMarketStatistics } from "./db/repositories/market.js";
 import { getCandidateProfile, getPreferences } from "./db/repositories/profile.js";
 import { getRun, getRunByKey, getRunSourceResults, listRuns } from "./db/repositories/runs.js";
@@ -130,6 +132,14 @@ async function main(argv: string[]): Promise<number> {
         print({ ...run, source_results: getRunSourceResults(db, run.id) });
         return 0;
       }
+      case "job:show": {
+        const ref = typeof flags.id === "string" ? flags.id : positional[0];
+        if (!ref) throw new Error("job:show <id|VAC-run.job>");
+        const job = resolveJob(db, ref);
+        if (!job) throw new Error(`Job ${ref} not found`);
+        print({ code: job.code, job, latest_match: getLatestMatch(db, job.id), application: getApplicationByJob(db, job.id) });
+        return 0;
+      }
       case "run:recover":
         print({ recovered: recoverInterruptedRuns(db) });
         return 0;
@@ -169,8 +179,9 @@ async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "verify-job": {
-        const jobId = num(flags["job-id"]);
-        if (!jobId) throw new Error("verify-job --job-id <id>");
+        const jobRef = typeof flags["job-id"] === "string" ? flags["job-id"] : num(flags["job-id"]);
+        const jobId = jobRef == null ? undefined : resolveJob(db, jobRef)?.id;
+        if (!jobId) throw new Error("verify-job --job-id <id|VAC-run.job>");
         const res = await verifyJob(db, config, jobId, logger);
         print({ job_id: jobId, result: res.result, status: res.job.status, last_verified_at: res.job.last_verified_at });
         return 0;

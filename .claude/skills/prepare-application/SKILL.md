@@ -6,6 +6,10 @@ description: Prepare one application - select the CV variant, pick relevant prof
 # prepare-application
 
 Input: `application_id` in state `SELECTED` (or `FAILED` / `REQUIRES_USER_INPUT` being retried).
+Refer to the job by its short code (`job_code`, e.g. `VAC-2.119`) in every message, note and file name.
+Application package note: `<vault>/Job Search/Applications/<job_code> - <Company> - <Role>.md` (type
+`application-package`), holding the CV variant, drafted answers in the posting's language, the open
+questions for the user and the submission checklist. Link it from `Job Matches.md`.
 
 ## Steps
 1. `get_application` + `get_job` + `get_job_match` + `get_candidate_profile`. Read the vault

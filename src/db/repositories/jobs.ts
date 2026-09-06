@@ -34,8 +34,25 @@ export interface JobRow {
   language: string | null;
   raw_metadata_json: string | null;
   duplicate_of_job_id: number | null;
+  /** search run whose discovery stage first stored the job (null when ingested outside a run) */
+  discovered_run_id: number | null;
+  /** short human identifier VAC-<discovery run>.<job id>, e.g. VAC-2.119 */
+  code: string;
   created_at: string;
   updated_at: string;
+}
+
+export const JOB_CODE_RE = /^VAC-(\d+)\.(\d+)$/i;
+
+/** Builds the short identifier for a job: VAC-<run>.<id> (run 0 when the job was ingested outside a run). */
+export function buildJobCode(runId: number | null | undefined, jobId: number): string {
+  return `VAC-${runId ?? 0}.${jobId}`;
+}
+
+/** Parses "VAC-2.119" (case-insensitive, surrounding whitespace ignored) into its job id, or null. */
+export function parseJobCode(code: string): { runId: number; jobId: number } | null {
+  const m = JOB_CODE_RE.exec(code.trim());
+  return m ? { runId: Number(m[1]), jobId: Number(m[2]) } : null;
 }
 
 export type UpsertOutcome = "created" | "updated" | "unchanged" | "duplicate";
@@ -70,8 +87,9 @@ function snapshotOf(j: NormalizedJob): Record<string, unknown> {
  * Cross-source identity: dedup_key (company + title) or canonical_url; the newer posting is kept as a
  * record but flagged duplicate_of_job_id so statistics and scoring see a single job.
  */
-export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string } = {}): UpsertJobResult {
+export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string; runId?: number | null } = {}): UpsertJobResult {
   const now = opts.now ?? nowIso();
+  const runId = opts.runId ?? null;
   const source = requireSource(db, job.sourceKey);
   const tx = db.transaction((): UpsertJobResult => {
     let existing: JobRow | undefined;
@@ -141,10 +159,10 @@ export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string } = {
       .prepare(
         `INSERT INTO jobs (source_id, external_id, url, canonical_url, title, normalized_title, company_id, company_name, location, country,
            work_mode, remote_scope, description, description_hash, content_hash, dedup_key, posted_at, discovered_at, last_seen_at,
-           status, seniority, employment_type, language, raw_metadata_json, duplicate_of_job_id, created_at, updated_at)
+           status, seniority, employment_type, language, raw_metadata_json, duplicate_of_job_id, discovered_run_id, created_at, updated_at)
          VALUES (@source_id, @external_id, @url, @canonical_url, @title, @normalized_title, @company_id, @company_name, @location, @country,
            @work_mode, @remote_scope, @description, @description_hash, @content_hash, @dedup_key, @posted_at, @now, @now,
-           'active', @seniority, @employment_type, @language, @raw_metadata_json, @duplicate_of_job_id, @now, @now)`,
+           'active', @seniority, @employment_type, @language, @raw_metadata_json, @duplicate_of_job_id, @discovered_run_id, @now, @now)`,
       )
       .run({
         source_id: source.id,
@@ -170,8 +188,10 @@ export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string } = {
         language: job.language,
         raw_metadata_json: job.rawMetadata ? toJson(job.rawMetadata) : null,
         duplicate_of_job_id: dup?.id ?? null,
+        discovered_run_id: runId,
       });
     const id = Number(res.lastInsertRowid);
+    db.prepare("UPDATE jobs SET code = ? WHERE id = ?").run(buildJobCode(runId, id), id);
     db.prepare("INSERT INTO job_versions (job_id, content_hash, snapshot_json, observed_at) VALUES (?, ?, ?, ?)").run(id, job.contentHash, toJson(snapshotOf(job)), now);
     return { job: getJob(db, id)!, outcome: dup ? "duplicate" : "created", duplicateOfJobId: dup?.id ?? null };
   });
@@ -180,6 +200,21 @@ export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string } = {
 
 export function getJob(db: DB, id: number): JobRow | null {
   return (db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | undefined) ?? null;
+}
+
+export function getJobByCode(db: DB, code: string): JobRow | null {
+  return (db.prepare("SELECT * FROM jobs WHERE code = ?").get(code.trim().toUpperCase()) as JobRow | undefined) ?? null;
+}
+
+/**
+ * Resolves a job reference given as a numeric id, a numeric string or a short code ("VAC-2.119").
+ * Returns null when nothing matches.
+ */
+export function resolveJob(db: DB, ref: number | string): JobRow | null {
+  if (typeof ref === "number") return getJob(db, ref);
+  const t = ref.trim();
+  if (/^\d+$/.test(t)) return getJob(db, Number(t));
+  return getJobByCode(db, t);
 }
 
 export interface JobPatch {

@@ -95,7 +95,7 @@ export async function runDiscovery(db: DB, config: LoadedConfig, opts: Discovery
       const s: SourceRunSummary = { ...base, status: "success", jobs_found: raw.length };
       for (const job of raw) {
         try {
-          const res = ingestRawJob(db, { ...job, sourceKey: source.key });
+          const res = ingestRawJob(db, { ...job, sourceKey: source.key }, { runId: opts.runId });
           if (res.outcome === "created") s.jobs_new++;
           else if (res.outcome === "updated") s.jobs_updated++;
           else if (res.outcome === "duplicate") s.jobs_deduplicated++;

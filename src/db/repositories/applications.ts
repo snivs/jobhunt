@@ -42,6 +42,8 @@ export interface ApplicationEventRow {
 export interface ApplicationView extends ApplicationRow {
   source_key: string;
   automation_policy: string;
+  /** short job identifier (VAC-<run>.<job>) for human communication */
+  job_code: string;
   job_title: string;
   company_name: string | null;
   job_url: string;
@@ -52,7 +54,7 @@ export interface ApplicationView extends ApplicationRow {
 function view(db: DB, id: number): ApplicationView | null {
   const row = db
     .prepare(
-      `SELECT a.*, s.key AS source_key, s.automation_policy, j.title AS job_title, j.company_name, j.url AS job_url, j.status AS job_status
+      `SELECT a.*, s.key AS source_key, s.automation_policy, j.code AS job_code, j.title AS job_title, j.company_name, j.url AS job_url, j.status AS job_status
        FROM applications a JOIN sources s ON s.id = a.source_id JOIN jobs j ON j.id = a.job_id WHERE a.id = ?`,
     )
     .get(id) as Omit<ApplicationView, "events"> | undefined;
@@ -268,6 +270,7 @@ export function assertCanSubmit(db: DB, input: { applicationId: number; runId: n
 
 export interface CandidateRow {
   job_id: number;
+  code: string;
   title: string;
   company_name: string | null;
   source_key: string;
@@ -299,7 +302,7 @@ export function getApplicationCandidates(
   where.push("(a.id IS NULL OR a.status IN ('DISCOVERED','MATCHED','SELECTED','PREPARING','READY','FAILED','BLOCKED'))");
   const rows = db
     .prepare(
-      `SELECT j.id AS job_id, j.title, j.company_name, s.key AS source_key, s.automation_policy, s.id AS source_id, m.overall_score, m.eligible,
+      `SELECT j.id AS job_id, j.code, j.title, j.company_name, s.key AS source_key, s.automation_policy, s.id AS source_id, m.overall_score, m.eligible,
          a.id AS application_id, a.status AS application_status, j.seniority, j.url,
          (SELECT MAX(CASE c.period WHEN 'year' THEN c.max_amount WHEN 'month' THEN c.max_amount * 12 WHEN 'week' THEN c.max_amount * 52 WHEN 'day' THEN c.max_amount * 260 WHEN 'hour' THEN c.max_amount * 2080 END)
             FROM compensation_observations c WHERE c.job_id = j.id AND c.observation_type = 'explicit') AS explicit_max_annual

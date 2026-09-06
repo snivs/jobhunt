@@ -102,6 +102,7 @@ export function getMatchHistory(db: DB, jobId: number): MatchView[] {
 
 export interface MatchingJobRow {
   job_id: number;
+  code: string;
   title: string;
   company_name: string | null;
   company_id: number | null;
@@ -149,7 +150,7 @@ export function getMatchingJobs(
   }
   return db
     .prepare(
-      `SELECT j.id AS job_id, j.title, j.company_name, j.company_id, j.location, j.country, j.work_mode, j.seniority, j.url, s.key AS source_key,
+      `SELECT j.id AS job_id, j.code, j.title, j.company_name, j.company_id, j.location, j.country, j.work_mode, j.seniority, j.url, s.key AS source_key,
          s.automation_policy, j.status AS job_status, j.discovered_at, m.overall_score, m.eligible, m.scored_at, m.id AS match_id, a.status AS application_status,
          (SELECT MAX(CASE c.period WHEN 'year' THEN c.max_amount WHEN 'month' THEN c.max_amount * 12 WHEN 'week' THEN c.max_amount * 52 WHEN 'day' THEN c.max_amount * 260 WHEN 'hour' THEN c.max_amount * 2080 END)
             FROM compensation_observations c WHERE c.job_id = j.id AND c.observation_type = 'explicit') AS explicit_max_annual

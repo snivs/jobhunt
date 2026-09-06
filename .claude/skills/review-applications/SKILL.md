@@ -5,6 +5,9 @@ description: Review the state of all applications - pending user input, submitte
 
 # review-applications
 
+Always name applications by their job short code (`job_code`, e.g. `VAC-2.119`) followed by company
+and role; never by bare URL.
+
 ## Status review
 1. `get_application_statistics` (funnel + by status + by source).
 2. `list_applications` for `REQUIRES_USER_INPUT`, `BLOCKED`, `FAILED`, `READY`

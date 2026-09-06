@@ -125,6 +125,7 @@ dump SQLite rows into Markdown.
 Job Hunter - YYYY-MM-DD HH:MM (America/Chihuahua)
 
 Vacantes: descubiertas / nuevas / relevantes / score >= N / seleccionadas
+(cada vacante mencionada se identifica como `VAC-<run>.<job>` + empresa + titulo; la URL va al final o solo en la nota)
 Aplicaciones: enviadas por fuente / bloqueadas / requieren tu respuesta / hand-off manual
 Skills observadas: top y variacion vs periodo anterior
 Compensacion: rangos explicitos / estimaciones / mediana explicita (moneda)

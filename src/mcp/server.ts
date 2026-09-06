@@ -32,7 +32,7 @@ import {
 } from "../db/repositories/applications.js";
 import { getCompanyById, getCompanyByName, searchCompanies, updateCompany, upsertCompany } from "../db/repositories/companies.js";
 import { getCompensationStatistics, getJobCompensation, recordCompensation } from "../db/repositories/compensation.js";
-import { getJob, getJobVersions, searchJobs, updateJob } from "../db/repositories/jobs.js";
+import { getJob, getJobVersions, searchJobs, updateJob, resolveJob } from "../db/repositories/jobs.js";
 import { getMarketSnapshots, getMarketStatistics, getSourceStatistics, saveMarketSnapshot } from "../db/repositories/market.js";
 import { getLatestMatch, getMatchHistory, getMatchingJobs, recordMatch } from "../db/repositories/matches.js";
 import { buildScoringProfile, getCandidateProfile, getProfileRow, removeCandidateSkill, setCandidateSkill, setPreference, upsertProfile } from "../db/repositories/profile.js";
@@ -159,9 +159,16 @@ tool(
   },
 );
 
-tool("get_job", "Get one job with its skills, compensation observations, latest match, application and change history.", { job_id: z.number().int() }, (a) => {
-  const job = getJob(db, a.job_id);
-  if (!job) throw new Error(`Job ${a.job_id} not found`);
+tool(
+  "get_job",
+  "Get one job with its skills, compensation observations, latest match, application and change history. Address it by job_id or by its short code (e.g. VAC-2.119).",
+  { job_id: z.number().int().optional(), code: z.string().optional().describe("short identifier VAC-<run>.<job>, e.g. VAC-2.119") },
+  (a) => {
+  const ref = a.job_id ?? a.code;
+  if (ref == null) throw new Error("job_id or code required");
+  const job = resolveJob(db, ref);
+  if (!job) throw new Error(`Job ${ref} not found`);
+  a.job_id = job.id;
   return {
     job,
     company: job.company_id ? getCompanyById(db, job.company_id) : null,
@@ -196,6 +203,7 @@ tool(
       .nullable()
       .optional(),
     raw_metadata: z.record(z.string(), json).nullable().optional(),
+    run_id: z.number().int().nullable().optional().describe("search run doing the discovery; becomes the run part of the job code"),
   },
   (a) =>
     ingestRawJob(db, {
@@ -215,7 +223,7 @@ tool(
       language: a.language ?? null,
       salary: a.salary ?? null,
       rawMetadata: a.raw_metadata ?? null,
-    }),
+    }, { runId: a.run_id ?? null }),
 );
 
 tool(
@@ -649,11 +657,21 @@ tool(
   { job_id: z.number().int(), run_id: z.number().int().nullable().optional(), initial_status: z.enum(["DISCOVERED", "MATCHED", "SELECTED"]).optional(), details: z.record(z.string(), json).nullable().optional() },
   (a) => getOrCreateApplication(db, { jobId: a.job_id, runId: a.run_id, initialStatus: a.initial_status, details: a.details }),
 );
-tool("get_application", "Get an application (by id or job id) with its full event history.", { application_id: z.number().int().optional(), job_id: z.number().int().optional() }, (a) => {
-  if (a.application_id) return getApplication(db, a.application_id);
-  if (a.job_id) return getApplicationByJob(db, a.job_id);
-  throw new Error("application_id or job_id required");
-});
+tool(
+  "get_application",
+  "Get an application (by application id, job id or job code such as VAC-2.119) with its full event history.",
+  { application_id: z.number().int().optional(), job_id: z.number().int().optional(), code: z.string().optional().describe("job short code VAC-<run>.<job>") },
+  (a) => {
+    if (a.application_id) return getApplication(db, a.application_id);
+    if (a.job_id) return getApplicationByJob(db, a.job_id);
+    if (a.code) {
+      const job = resolveJob(db, a.code);
+      if (!job) throw new Error(`Job ${a.code} not found`);
+      return getApplicationByJob(db, job.id);
+    }
+    throw new Error("application_id, job_id or code required");
+  },
+);
 tool(
   "update_application",
   "Patch application material and metadata (method, resume variant, cover letter path, answers, pending user questions, external reference). Status changes go through record_application_event.",

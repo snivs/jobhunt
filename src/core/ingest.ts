@@ -23,9 +23,9 @@ function normalizePeriod(p: string | null | undefined): PayPeriod {
  * Normalizes a raw posting, upserts it (idempotent) and records the published salary range,
  * if any, as an EXPLICIT compensation observation sourced from the posting itself.
  */
-export function ingestRawJob(db: DB, raw: RawJob): IngestResult {
+export function ingestRawJob(db: DB, raw: RawJob, opts: { runId?: number | null } = {}): IngestResult {
   const normalized = normalizeJob(raw);
-  const result = upsertJob(db, normalized);
+  const result = upsertJob(db, normalized, { runId: opts.runId ?? null });
   let compensationRecorded = false;
   const salary = normalized.salary;
   if (salary && (salary.min != null || salary.max != null) && salary.currency && !result.job.duplicate_of_job_id) {
