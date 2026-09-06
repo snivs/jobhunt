@@ -100,7 +100,7 @@ export class HttpClient {
         const res = await this.fetchImpl(url, {
           ...init,
           signal: controller.signal,
-          headers: { "User-Agent": this.opts.userAgent ?? "jobhunt/0.1 (+https://github.com/audn/jobhunt; respectful job aggregator)", ...(init.headers ?? {}) },
+          headers: { "User-Agent": this.opts.userAgent ?? "jobhunt/0.1 (+https://github.com/snivs/jobhunt; respectful job aggregator)", ...(init.headers ?? {}) },
         });
         if (res.ok) return res;
         const retryable = res.status === 429 || res.status === 408 || res.status >= 500;
