@@ -32,7 +32,7 @@ if [[ ! -f "$VAULT/_CLAUDE.md" ]]; then
   PLUGIN_ROOT="$(ls -d "$HOME"/.claude/plugins/cache/obsidian-second-brain/obsidian-second-brain/* 2>/dev/null | tail -1 || true)"
   if [[ -n "$PLUGIN_ROOT" ]]; then
     uv run --no-project python "$PLUGIN_ROOT/scripts/bootstrap_vault.py" --path "$VAULT" --name "${JOBHUNT_OWNER_NAME:-Owner}" --preset builder
-    node scripts/init-vault.mjs "$VAULT"
+    node scripts/init-vault.mjs "$VAULT" "${JOBHUNT_OWNER_NAME:-Owner}"
   else
     echo "   plugin root not found; create the vault manually with bootstrap_vault.py"
   fi

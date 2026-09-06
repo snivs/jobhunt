@@ -3,6 +3,7 @@
 Lee `docs/ARCHITECTURE.md` antes de cambiar el diseño. Las skills en `.claude/skills/` son la lógica operativa del agente; el código en `src/` es la lógica determinista.
 
 ## Idioma
+(Decisión de este proyecto; si haces un fork, cámbiala aquí y en las skills.)
 - Texto para el usuario: español de México (tú, tienes, puedes, trabajo). Nunca modismos rioplatenses.
 - Código, identificadores, commits, frontmatter y nombres de herramientas: inglés.
 

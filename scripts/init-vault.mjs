@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const vault = path.resolve(process.argv[2] ?? process.env.OBSIDIAN_VAULT_PATH ?? "vault");
+const owner = process.argv[3] ?? process.env.JOBHUNT_OWNER_NAME ?? "Owner";
 if (!fs.existsSync(vault)) {
   console.error(`Vault not found: ${vault}. Run obsidian-second-brain's bootstrap_vault.py first.`);
   process.exit(1);
@@ -69,7 +70,7 @@ writeIfMissing(
 # Index
 
 ## For future agent
-Indice principal del vault de busqueda de empleo de Auden. Todo conocimiento importante esta a maximo dos saltos: Career (quien es el candidato), Job Search (que se esta buscando y como va), Market Intelligence (que pide el mercado). La fuente de verdad transaccional (vacantes, matches, aplicaciones, estadisticas) es SQLite (data/jobhunt.db, servidor MCP jobhunt-db); este vault guarda contexto, criterio y aprendizajes. Actualizado por el sistema en cada ciclo.
+Indice principal del vault de busqueda de empleo de ${owner}. Todo conocimiento importante esta a maximo dos saltos: Career (quien es el candidato), Job Search (que se esta buscando y como va), Market Intelligence (que pide el mercado). La fuente de verdad transaccional (vacantes, matches, aplicaciones, estadisticas) es SQLite (data/jobhunt.db, servidor MCP jobhunt-db); este vault guarda contexto, criterio y aprendizajes. Actualizado por el sistema en cada ciclo.
 
 ## Career
 - [[Career/Candidate Profile]] - identidad profesional, preferencias y restricciones del candidato
@@ -127,7 +128,7 @@ writeIfMissing(
 ## For future agent
 Hechos minimos que toda sesion necesita. Se completan en la entrevista inicial (skill jobhunt-interview). Mientras digan TBD, el pipeline de busqueda no debe correr.
 
-- Owner: Auden
+- Owner: ${owner}
 - Zona horaria: America/Chihuahua
 - Ubicacion: TBD
 - Puesto actual / seniority: TBD
@@ -156,7 +157,7 @@ TBD
 [[Career/Candidate Profile]] - [[Career/Experience]] - [[Career/Skills]] - [[Career/Education]] - [[Job Search/Search Strategy]] - [[Job Search/Application Strategy]]
 `;
 
-writeIfMissing("Career/Candidate Profile.md", pending("Candidate Profile", "candidate-profile", "Perfil profesional completo de [[Career/Candidate Profile|Auden]]: identidad, seniority, anos de experiencia y liderazgo, preferencias laborales, compensacion, restricciones duras y lo que quiere / no quiere hacer."));
+writeIfMissing("Career/Candidate Profile.md", pending("Candidate Profile", "candidate-profile", "Perfil profesional completo de [[Career/Candidate Profile|${owner}]]: identidad, seniority, anos de experiencia y liderazgo, preferencias laborales, compensacion, restricciones duras y lo que quiere / no quiere hacer."));
 writeIfMissing("Career/Experience.md", pending("Experience", "experience", "Historial de empleadores y proyectos con fechas, rol, logros cuantificados y tecnologias (wikilinks a Market Intelligence/Skills/<Skill>). Es la unica fuente para redactar cartas y respuestas: nada que no este aqui puede afirmarse en una aplicacion."));
 writeIfMissing("Career/Skills.md", pending("Skills", "skills-inventory", "Inventario de habilidades del candidato con nivel (expert/advanced/intermediate/basic/learning), anos y evidencia. La version normalizada para scoring vive en SQLite (candidate_skills)."));
 writeIfMissing("Career/Education.md", pending("Education", "education", "Estudios, certificaciones (emisor y ano) y cursos relevantes del candidato."));

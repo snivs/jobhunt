@@ -1,6 +1,6 @@
 # Arquitectura - Autonomous Job Hunter
 
-Estado: propuesta aprobada e implementada en Fase 1 (infraestructura) el 2026-09-05. Este documento es la referencia de diseño; el código es la fuente de verdad de los detalles.
+Estado: diseño aprobado el 2026-09-05; fases 1 a 6, 8 y 9 implementadas y en uso (dos ciclos reales corridos el 2026-09-05); fase 7 (envío automático) pendiente de una fuente que lo permita oficialmente. Este documento es la referencia de diseño; el código es la fuente de verdad de los detalles.
 
 ## 1. Objetivo
 
@@ -75,7 +75,7 @@ Lo único que se añadió, de forma compatible: `scripts/init-vault.mjs`, que cr
 
 ## 6. Fuentes (`src/sources`)
 
-Arquitectura de adapters `JobSource { key, fetch, verify?, submit? }` con cliente HTTP por fuente (rate limiter por segundo/minuto/hora + concurrencia, reintentos con backoff exponencial y `Retry-After`). Implementados: Remotive (API pública), Remote OK (feed JSON), Arbeitnow (API), Hacker News "Who is hiring" (API Algolia), y tableros ATS públicos Greenhouse / Lever / Ashby (tokens por empresa en config). LinkedIn e Indeed están `blocked`: nunca se consultan ni se automatizan. `submit` solo existirá para fuentes cuya API oficial permita enviar aplicaciones de terceros (Fase 7); hasta entonces todas son `discover_only` y el resultado es un hand-off manual.
+Arquitectura de adapters `JobSource { key, fetch, verify?, submit? }` con cliente HTTP por fuente (rate limiter por segundo/minuto/hora + concurrencia, reintentos con backoff exponencial y `Retry-After`). Implementados: Remotive (API pública), Remote OK (feed JSON), Arbeitnow (API), Hacker News "Who is hiring" (API Algolia), We Work Remotely (RSS), Himalayas (API), tableros ATS públicos Greenhouse / Lever / Ashby (tokens por empresa en config) y career sites alojados en Workday (JSON público, por tenant). LinkedIn e Indeed están `blocked`: nunca se consultan ni se automatizan. `submit` solo existirá para fuentes cuya API oficial permita enviar aplicaciones de terceros (Fase 7); hasta entonces todas son `discover_only` y el resultado es un hand-off manual.
 
 ## 7. Pipeline por ciclo (skill `jobhunt-run`)
 
@@ -103,14 +103,14 @@ Sin evasión de CAPTCHA, bot detection, rate limits, login ni términos de servi
 | Fase | Estado | Contenido |
 |---|---|---|
 | 1 Infraestructura | hecha | repo, config, SQLite + migraciones, MCP, logging, lock, tests, despliegue, vault |
-| 2 Perfil | pendiente (entrevista) | skill `jobhunt-interview`, persistencia vault + SQLite |
-| 3 Descubrimiento | código listo, sin ejecutar | adapters + `discover` CLI; se activa tras la entrevista |
-| 4 Análisis + scoring | código listo | `analyze-job`, `score-job`, `calculate_job_match` |
-| 5 Investigación | skill lista | `research-company` + `/research` |
-| 6 Preparación | skill lista | `prepare-application` |
+| 2 Perfil | hecha (entrevista 2026-09-05) | skill `jobhunt-interview`, persistencia vault + SQLite |
+| 3 Descubrimiento | hecha (9 fuentes activas) | adapters + `discover` CLI; se activa tras la entrevista |
+| 4 Análisis + scoring | hecha (umbral 70, fx_rates, rescore CLI) | `analyze-job`, `score-job`, `calculate_job_match` |
+| 5 Investigación | hecha (company_research con niveles de evidencia) | `research-company` + `/research` |
+| 6 Preparación | hecha (paquetes de aplicación en el vault, hand-off manual, códigos VAC-run.job) | `prepare-application` |
 | 7 Envío permitido | pendiente | adapters `submit` para fuentes que lo permitan oficialmente |
-| 8 Market intelligence | código listo | estadísticas, snapshots, `market-analysis` |
-| 9 Mantenimiento autónomo | skill lista | `maintain-job-system`, vault health/reconcile |
+| 8 Market intelligence | hecha (snapshots por ciclo) | estadísticas, snapshots, `market-analysis` |
+| 9 Mantenimiento autónomo | hecha | `maintain-job-system`, vault health/reconcile |
 
 ## 12. Riesgos conocidos
 
