@@ -13,7 +13,7 @@ schedule:
   slot_grace_minutes: 120
 
 matching:
-  # lowered from 80 to 70 by the candidate on 2026-09-05 after the first cycle's calibration
+  # eligibility threshold (0-100); tune after the first cycles
   minimum_score: 70
   scoring_version: "1.0"
   # weights are renormalized over the factors that apply to a given job
@@ -144,11 +144,11 @@ sources:
     kind: career_page
     enabled: true
     automation_policy: discover_only
-    # AMD uses iCIMS (careers-amd.icims.com), not Workday: no adapter yet, manual review.
+    # Example: a Workday tenant/site pair and its display name. Add the companies you target.
     boards:
-      - nvidia.wd5/NVIDIAExternalCareerSite
+      - example.wd5/ExampleExternalCareerSite
     options:
-      "company:nvidia.wd5/NVIDIAExternalCareerSite": NVIDIA
+      "company:example.wd5/ExampleExternalCareerSite": Example Corp
       max_per_board: 40
       fetch_details: true
     rate_limits: { requests_per_second: 0.5, requests_per_minute: 20, requests_per_hour: 200, concurrency: 1 }
@@ -165,6 +165,7 @@ sources:
     retry: { max_retries: 0, initial_backoff_ms: 0, backoff_multiplier: 1, max_backoff_ms: 0 }
   # ATS boards (Greenhouse / Lever / Ashby) are official public job-board APIs.
   # Company board tokens are added after the interview (target companies list).
+  # Keep your real boards in a private override (config/jobhunt.local.yaml + JOBHUNT_CONFIG_PATH in .env).
   - key: greenhouse
     name: Greenhouse Job Boards
     kind: ats
@@ -172,9 +173,9 @@ sources:
     automation_policy: discover_only
     base_url: https://boards-api.greenhouse.io/v1/boards
     boards:
-      - sourcegraph91
+      - examplecompany
     options:
-      "company:sourcegraph91": Sourcegraph
+      "company:examplecompany": Example Company
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 2 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
   - key: lever
@@ -193,13 +194,9 @@ sources:
     automation_policy: discover_only
     base_url: https://api.ashbyhq.com/posting-api/job-board
     boards:
-      - livekit
-      - colonist
-      - ashby
+      - examplestartup
     options:
-      "company:livekit": LiveKit
-      "company:colonist": Colonist
-      "company:ashby": Ashby
+      "company:examplestartup": Example Startup
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 2 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
   # Platforms whose terms prohibit third-party automation: discovery may only happen through

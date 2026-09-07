@@ -28,3 +28,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# private configuration override (real target boards, personal tuning)
+config/*.local.yaml

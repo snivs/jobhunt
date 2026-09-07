@@ -114,7 +114,7 @@ npm run jobhunt -- stats --days 30
 
 ## Configuration
 
-Everything variable is in [config/jobhunt.yaml](config/jobhunt.yaml): schedule and time zone, scoring weights and threshold, FX rates used only to compare published ranges with the candidate's currency, application limits, per-source automation policy, rate limits and retries, vault and database paths. Secrets go in `.env` only (see `.env.example`); they are never written to SQLite, Markdown, logs or git.
+Everything variable is in [config/jobhunt.yaml](config/jobhunt.yaml): schedule and time zone, scoring weights and threshold, FX rates used only to compare published ranges with the candidate's currency, application limits, per-source automation policy, rate limits and retries, vault and database paths. The versioned file ships with example boards; keep your real target companies in a private copy (`config/jobhunt.local.yaml` is gitignored) and point `JOBHUNT_CONFIG_PATH` at it in `.env`. Secrets go in `.env` only (see `.env.example`); they are never written to SQLite, Markdown, logs or git.
 
 ## Development
 
