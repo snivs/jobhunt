@@ -6,7 +6,8 @@ description: Review the state of all applications - pending user input, submitte
 # review-applications
 
 Always name applications by their job short code (`job_code`, e.g. `VAC-2.119`) followed by company
-and role; never by bare URL.
+and role; never by bare URL. When presenting hand-offs or candidates for a decision, use the mandatory
+table: `| Vacante (code + company + role, linked to the posting) | Compensacion | Ubicacion/remoto/hibrido | Por que si | Por que no |`.
 
 ## Status review
 1. `get_application_statistics` (funnel + by status + by source).

@@ -125,7 +125,10 @@ dump SQLite rows into Markdown.
 Job Hunter - YYYY-MM-DD HH:MM (America/Chihuahua)
 
 Vacantes: descubiertas / nuevas / relevantes / score >= N / seleccionadas
-(cada vacante mencionada se identifica como `VAC-<run>.<job>` + empresa + titulo; la URL va al final o solo en la nota)
+(cada vacante mencionada se identifica como `VAC-<run>.<job>` + empresa + titulo)
+Hand-offs: SIEMPRE como tabla Markdown, una fila por vacante, columnas exactas:
+| Vacante (codigo + empresa + puesto, con link al posting) | Compensacion | Ubicacion/remoto/hibrido | Por que si | Por que no |
+"Por que si" / "Por que no": hechos del analisis (score, skills cubiertas y faltantes, restricciones, sponsorship, salario vs objetivo), 2-4 frases cada una. La misma tabla va en el reporte del vault y en el mensaje al usuario.
 Aplicaciones: enviadas por fuente / bloqueadas / requieren tu respuesta / hand-off manual
 Skills observadas: top y variacion vs periodo anterior
 Compensacion: rangos explicitos / estimaciones / mediana explicita (moneda)

@@ -16,7 +16,8 @@ Lee `docs/ARCHITECTURE.md` antes de cambiar el diseño. Las skills en `.claude/s
 - Nunca inventar experiencia, certificaciones, empleadores, tecnologías ni respuestas a preguntas obligatorias (`REQUIRES_USER_INPUT`).
 - Secretos solo en `.env`; jamás en SQLite, Markdown, logs o commits.
 - Historial append-only: nunca borrar `job_versions`, `application_events`, `run_errors`.
-- Identificador corto de vacante: `VAC-<run>.<job_id>` (columna `jobs.code`, p. ej. `VAC-2.119`). Úsalo SIEMPRE al mencionar una vacante al usuario (reportes, Job Matches, hand-offs, chat) en lugar de pegar URLs; `get_job`, `get_application` y `job:show` lo aceptan directamente.
+- Identificador corto de vacante: `VAC-<run>.<job_id>` (columna `jobs.code`, p. ej. `VAC-2.119`). Úsalo SIEMPRE al mencionar una vacante al usuario (reportes, Job Matches, hand-offs, chat); `get_job`, `get_application` y `job:show` lo aceptan directamente. Nunca pegues URLs sueltas: el enlace va sobre el nombre.
+- Hand-offs al usuario (decisión del candidato, 2026-09-11): SIEMPRE en una tabla Markdown con estas columnas exactas: `| Vacante (código + empresa + puesto, con link al posting) | Compensación | Ubicación/remoto/híbrido | Por qué sí | Por qué no |`. Una fila por vacante; "Por qué sí" y "Por qué no" con hechos del análisis (score, skills, restricciones, sponsorship, salario), sin relleno.
 
 ## Comandos útiles
 ```bash
