@@ -8,7 +8,7 @@ Lee `docs/ARCHITECTURE.md` antes de cambiar el diseño. Las skills en `.claude/s
 - Código, identificadores, commits, frontmatter y nombres de herramientas: inglés.
 
 ## Reglas de trabajo
-- Estado persistente = SQLite (`data/jobhunt.db`, MCP `jobhunt-db`) + vault (`vault/`, plugin obsidian-second-brain). La conversación es efímera.
+- Estado persistente = SQLite (`data/jobhunt.db`, MCP `jobhunt-db`) + la bóveda de Obsidian (plugin obsidian-second-brain). La conversación es efímera. La bóveda vive **fuera** de este repo y su ruta la resuelve la configuración (`OBSIDIAN_VAULT_PATH`, si no `vault.path`): nunca la asumas ni la escribas fija en archivos versionados.
 - Sin perfil validado (`get_candidate_profile().profile.interview_completed = 1`) no se descubre ni se aplica a nada: primero `/jobhunt-interview`.
 - Fuentes: solo APIs oficiales, integraciones permitidas, career pages y ATS públicos. Nunca evadir CAPTCHA, bot detection, rate limits, login ni términos de servicio. `automation_policy` en `config/jobhunt.yaml` manda.
 - Máximo `applications.max_per_source_per_run` (3) envíos por fuente por ciclo; una aplicación por vacante para siempre; `check_can_submit` antes de `SUBMITTING`.
@@ -27,4 +27,6 @@ npm run jobhunt -- db:status | schedule:status | run:list | stats
 
 ## Estructura
 - `src/config` config YAML validada; `src/db` esquema/migraciones/repositorios; `src/core` normalización, scoring, máquina de estados, lock, run-manager; `src/sources` adapters; `src/mcp` servidor MCP; `src/cli.ts` CLI.
-- `.claude/skills/*` skills; `config/jobhunt.yaml`; `deploy/` systemd/Docker; `vault/` (repo git aparte, ignorado aquí).
+- `.claude/skills/*` skills; `config/jobhunt.yaml` (plantilla pública, valores genéricos); `deploy/` systemd/Docker.
+- Configuración real de la máquina, toda ignorada por git: `.env` (apunta `JOBHUNT_CONFIG_PATH` al override que de verdad gobierna), `config/*.local.yaml` (ahí vive la ruta real de la bóveda) y `.claude/settings.local.json` (fija `OBSIDIAN_VAULT_PATH` por proyecto, ganando sobre el ajuste global del usuario). Si cambias de bóveda, edita esos tres, no las plantillas públicas.
+- `vault/` ya no pertenece a este pipeline: la capa del job hunter se movió a su propia bóveda el 2026-09-12. Si el directorio existe, es una bóveda personal ajena y no debe recibir notas de búsqueda de empleo.
