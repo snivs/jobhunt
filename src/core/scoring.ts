@@ -26,6 +26,18 @@ export type HardConstraint =
   | { type: "work_authorization"; regions: string[] }
   | { type: "required_skill"; slug: string }
   | { type: "employment_type"; allowed: string[] }
+  /**
+   * The candidate will not relocate: a job only qualifies if it can be performed from `country`.
+   * Onsite/hybrid must be in `country`; remote must have a scope that reaches it. `acceptedScopes`
+   * lists the extra scope words that include the candidate (region names, "global", "worldwide").
+   */
+  | { type: "workable_from"; country: string; acceptedScopes?: string[] }
+  /** Reject a job whose responsibilities match any of these tags (e.g. support-only roles). */
+  | { type: "excluded_responsibility"; tags: string[] }
+  /**
+   * Free-text rule the engine cannot evaluate. It never rejects a job silently: it is reported in
+   * `manualChecks` so the agent knows it still has to verify the rule by hand.
+   */
   | { type: "custom"; key: string; description: string };
 
 /** Normalized candidate state used for scoring (built from SQLite, never from the vault directly). */
@@ -102,6 +114,8 @@ export interface MatchResult {
   strengths: string[];
   risks: string[];
   hardConstraintFailures: string[];
+  /** Hard constraints the engine cannot decide on its own and that a human still has to check. */
+  manualChecks: string[];
   missingInformation: string[];
   scoringVersion: string;
 }
@@ -224,6 +238,63 @@ function scoreLeadership(profile: CandidateProfile, job: JobAnalysis): Partial {
 
 function isWorldwideRemote(job: JobAnalysis): boolean {
   return job.workMode === "remote" && (!job.remoteScope || /world|global|anywhere/i.test(job.remoteScope));
+}
+
+const GLOBAL_SCOPE_RE = /\b(worldwide|world|global|globally|anywhere)\b/i;
+
+/**
+ * Remote-work jargon that carries no geographic information. A scope built only out of these words
+ * ("Remote", "Remote and async", "Remote (scope not stated)") tells us nothing about where the
+ * employer can hire, so it must be treated as unstated rather than as a place that excludes us.
+ */
+const NON_GEOGRAPHIC_SCOPE_WORDS =
+  /\b(remote|remotely|async|asynchronous|distributed|flexible|fully|full|part|time|first|team|work|working|from|home|office|scope|not|stated|unspecified|unknown|undisclosed|any|and|or|the|a|in|within|hybrid|onsite|on|site|n\/?a)\b/gi;
+
+function scopeStatesGeography(scope: string): boolean {
+  const remainder = scope
+    .toLowerCase()
+    .replace(NON_GEOGRAPHIC_SCOPE_WORDS, " ")
+    .replace(/[^a-zà-ÿ]+/g, " ")
+    .trim();
+  return remainder.length > 0;
+}
+
+/** Does a free-text remote scope reach a candidate based in `country`? */
+function scopeReaches(scope: string, country: string, acceptedScopes: string[]): boolean {
+  const s = scope.toLowerCase();
+  if (GLOBAL_SCOPE_RE.test(s)) return true;
+  if (s.includes(country.toLowerCase())) return true;
+  return acceptedScopes.some((a) => a.trim() !== "" && s.includes(a.toLowerCase()));
+}
+
+/**
+ * A candidate who will not relocate can only take a job that reaches where he lives. Returns a
+ * failure when the job clearly cannot, or a manual check when the posting does not say enough.
+ */
+function evaluateWorkableFrom(job: JobAnalysis, hc: Extract<HardConstraint, { type: "workable_from" }>): { failure?: string; manual?: string } {
+  const base = hc.country;
+  const baseLower = base.toLowerCase();
+  const accepted = hc.acceptedScopes ?? [];
+  const jobCountry = job.country?.toLowerCase() ?? null;
+
+  if (job.workMode === "onsite" || job.workMode === "hybrid") {
+    if (!jobCountry) return { manual: `${job.workMode} role with no country stated: confirm the workplace is in ${base}` };
+    if (jobCountry !== baseLower) return { failure: `${job.workMode} in ${job.country}: would require relocating outside ${base}` };
+    return {};
+  }
+
+  if (job.workMode === "remote") {
+    const scope = job.remoteScope?.trim();
+    if (scope && scopeStatesGeography(scope)) {
+      if (scopeReaches(scope, base, accepted)) return {};
+      return { failure: `Remote scope "${scope}" does not reach ${base}` };
+    }
+    if (scope && scopeReaches(scope, base, accepted)) return {}; // e.g. "fully remote, anywhere"
+    if (jobCountry && jobCountry !== baseLower) return { failure: `Remote but scoped to ${job.country}, not ${base}` };
+    return { manual: `Remote role with no stated scope: confirm the employer can engage someone in ${base}` };
+  }
+
+  return { manual: `Work mode unknown: confirm the role can be performed from ${base}` };
 }
 
 function scoreLocation(profile: CandidateProfile, job: JobAnalysis): Partial {
@@ -404,8 +475,13 @@ function scorePreference(profile: CandidateProfile, job: JobAnalysis): Partial {
   return { factor: "preference_match", score: clamp(score), applicable: true, explanation: notes.length ? notes.join("; ") : "No specific preference signals" };
 }
 
-function evaluateHardConstraints(profile: CandidateProfile, job: JobAnalysis, comp: CompensationScore): string[] {
+function evaluateHardConstraints(
+  profile: CandidateProfile,
+  job: JobAnalysis,
+  comp: CompensationScore,
+): { failures: string[]; manualChecks: string[] } {
   const failures: string[] = [];
+  const manualChecks: string[] = [];
   for (const hc of profile.hardConstraints) {
     switch (hc.type) {
       case "min_salary": {
@@ -450,11 +526,25 @@ function evaluateHardConstraints(profile: CandidateProfile, job: JobAnalysis, co
         if (job.employmentType !== "unknown" && !hc.allowed.includes(job.employmentType)) failures.push(`Employment type ${job.employmentType} not allowed`);
         break;
       }
+      case "workable_from": {
+        const { failure, manual } = evaluateWorkableFrom(job, hc);
+        if (failure) failures.push(failure);
+        if (manual) manualChecks.push(manual);
+        break;
+      }
+      case "excluded_responsibility": {
+        const tags = hc.tags.map((t) => t.toLowerCase()).filter((t) => t !== "");
+        const hit = job.responsibilities.find((r) => tags.some((t) => r.toLowerCase().includes(t)));
+        if (hit) failures.push(`Responsibility the candidate excludes: "${hit}"`);
+        break;
+      }
       case "custom":
+        // The engine cannot decide this one. Surface it instead of ignoring it silently.
+        manualChecks.push(`Manual check required (${hc.key}): ${hc.description}`);
         break;
     }
   }
-  return failures;
+  return { failures, manualChecks };
 }
 
 export interface ScoringOptions {
@@ -512,10 +602,11 @@ export function scoreJob(profile: CandidateProfile, job: JobAnalysis, options: S
   if (job.seniority === "unknown" && !missingInformation.includes("seniority")) missingInformation.push("seniority");
   if (job.workMode === "unknown" && !missingInformation.includes("work_mode")) missingInformation.push("work_mode");
 
-  const hardConstraintFailures = evaluateHardConstraints(profile, job, comp);
+  const { failures: hardConstraintFailures, manualChecks } = evaluateHardConstraints(profile, job, comp);
   const eligible = hardConstraintFailures.length === 0 && overallScore >= options.minimumScore;
+  for (const m of manualChecks) if (!missingInformation.includes(m)) missingInformation.push(m);
 
-  return { overallScore, eligible, factors, strengths, risks, hardConstraintFailures, missingInformation, scoringVersion: options.scoringVersion };
+  return { overallScore, eligible, factors, strengths, risks, hardConstraintFailures, manualChecks, missingInformation, scoringVersion: options.scoringVersion };
 }
 
 /** Human-readable explanation block (used in reports and the vault). */
@@ -527,6 +618,7 @@ export function explainMatch(result: MatchResult): string {
   if (result.strengths.length) lines.push("", "Strengths:", ...result.strengths.map((s) => `- ${s}`));
   if (result.risks.length) lines.push("", "Risks:", ...result.risks.map((s) => `- ${s}`));
   if (result.hardConstraintFailures.length) lines.push("", "Hard constraint failures:", ...result.hardConstraintFailures.map((s) => `- ${s}`));
+  if (result.manualChecks.length) lines.push("", "Manual checks:", ...result.manualChecks.map((s) => `- ${s}`));
   if (result.missingInformation.length) lines.push("", `Missing information: ${result.missingInformation.join(", ")}`);
   return lines.join("\n");
 }

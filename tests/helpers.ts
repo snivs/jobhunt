@@ -9,8 +9,14 @@ import type { CandidateProfile, JobAnalysis } from "../src/core/scoring.js";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * Always loads the versioned template, never the machine's local override. `loadConfig` calls
+ * `loadDotEnv`, which injects `JOBHUNT_CONFIG_PATH` from `.env` into the env object we pass, so
+ * without pinning `configPath` the suite would assert against whatever sources this particular
+ * machine happens to have enabled.
+ */
 export function testConfig(overrides: Partial<LoadedConfig> = {}): LoadedConfig {
-  const cfg = loadConfig({ rootDir: ROOT, env: { JOBHUNT_DB_PATH: ":memory:" } });
+  const cfg = loadConfig({ rootDir: ROOT, configPath: "config/jobhunt.yaml", env: { JOBHUNT_DB_PATH: ":memory:" } });
   return { ...cfg, ...overrides };
 }
 
