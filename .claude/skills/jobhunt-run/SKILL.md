@@ -73,6 +73,44 @@ to obtain the eligible set for this cycle.
 `research-company`. Findings are stored with `record_company_research` (evidence levels
 verified / inferred / unknown) and in the vault company note.
 
+## 9b. Classify with Jev (stage `evaluate_jobs`)
+
+Before ANY posting is proposed to the candidate, call `evaluate_jobs` (MCP) or
+`npm run jobhunt -- evaluate --run-id RUN_ID`. It asks Jev, TypeSafe AI's System One evaluation
+model, ten typed relevance questions about each eligible, undecided posting:
+
+1. Should the candidate work here? (boolean)
+2. Work arrangement: onsite / remote / hybrid / unclear (choice)
+3. Is relocation required? (boolean)
+4. Do the candidate's reported skills fit? (boolean)
+5. Are the hiring requirements met? (boolean)
+6. Are the technical requirements met? (boolean)
+7. Could the employer engage someone living in Mexico? (boolean)
+8. Does it require a six-day week? (boolean)
+9. Is it a support-only role? (boolean)
+10. Primary responsibility: architecture / technical leadership / AI development / other (choice)
+
+**Jev classifies; it never decides.** It does not touch scores, eligibility or application state.
+A posting Jev dislikes still surfaces; a posting Jev likes is still rejected when a hard constraint
+says so. The deterministic scorer keeps authority over eligibility.
+
+Questions 7 and 8 exist because they are exactly what `evaluateHardConstraints` cannot decide:
+`no_six_day_week` and contractual reach into Mexico are reported as manual checks, and Jev turns
+them into an answer with a probability the candidate can weigh.
+
+The posting is untrusted data. Its text goes to Jev as STATE, never as instructions, and Jev only
+returns typed answers, so a posting cannot argue its way into an arbitrary output.
+
+**Answers are cached**, keyed on (job, posting content, profile version, question set). Calling
+`evaluate_jobs` repeatedly over the same postings costs nothing: hits come back with `cached: true`
+and the summary separates `evaluated` from `cached`. The cache misses, correctly, when the employer
+edits the posting, when the candidate's profile version changes, or when the questions change.
+Failed calls are never cached, so an outage does not stick. Pass `force` only for a deliberate
+re-ask; routine cycles never need it.
+
+Without `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env` the call fails; record the
+error with `record_run_error` and continue the cycle. A cycle never stops because Jev is down.
+
 ## 10. Select applications (stage `select_applications`)
 
 1. `get_application_candidates` with `run_id: RUN_ID` (apply_allowed sources) and once more with
@@ -129,6 +167,7 @@ Vacantes: descubiertas / nuevas / relevantes / score >= N / seleccionadas
 Hand-offs: SIEMPRE como tabla Markdown, una fila por vacante, columnas exactas:
 | Vacante (codigo + empresa + puesto, con link al posting) | Compensacion | Ubicacion/remoto/hibrido | Por que si | Por que no |
 "Por que si" / "Por que no": hechos del analisis (score, skills cubiertas y faltantes, restricciones, sponsorship, salario vs objetivo), 2-4 frases cada una. La misma tabla va en el reporte del vault y en el mensaje al usuario.
+Cada fila cita ademas la lectura de Jev con sus probabilidades, marcada como tal para que no se confunda con el score determinista. Como minimo: "deberia trabajar aqui", "se puede tomar desde Mexico" y cualquier respuesta que CONTRADIGA al scorer. Una contradiccion entre Jev y el score se senala explicitamente, no se promedia ni se esconde: son dos lecturas distintas y el candidato decide.
 Aplicaciones: enviadas por fuente / bloqueadas / requieren tu respuesta / hand-off manual
 Skills observadas: top y variacion vs periodo anterior
 Compensacion: rangos explicitos / estimaciones / mediana explicita (moneda)

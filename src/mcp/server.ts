@@ -36,6 +36,9 @@ import { getJob, getJobVersions, searchJobs, updateJob, resolveJob } from "../db
 import { getMarketSnapshots, getMarketStatistics, getSourceStatistics, saveMarketSnapshot } from "../db/repositories/market.js";
 import { getLatestMatch, getMatchHistory, getMatchingJobs, recordMatch } from "../db/repositories/matches.js";
 import { buildScoringProfile, getCandidateProfile, getProfileRow, removeCandidateSkill, setCandidateSkill, setPreference, upsertProfile } from "../db/repositories/profile.js";
+import { runEvaluations } from "../core/evaluation-runner.js";
+import { getJobsNeedingEvaluation, getLatestJobEvaluation } from "../db/repositories/evaluations.js";
+import { QUESTION_SET } from "../core/jev.js";
 import { getCompaniesNeedingResearch, getLatestCompanyResearch, recordCompanyResearch } from "../db/repositories/research.js";
 import { getRun, getRunByKey, getRunSourceResults, getState, listRuns, PIPELINE_STAGES, recordRunError, recordSourceResult, setState, updateRunStage, updateRunStats } from "../db/repositories/runs.js";
 import { ensureSkill, getCandidateSkillGaps, getJobSkills, getSkillCooccurrence, getSkillMarketDemand, recordJobSkill, searchSkills, seedSkillAliases } from "../db/repositories/skills.js";
@@ -563,6 +566,35 @@ tool(
   (a) => rescorePending(db, config, { runId: a.run_id, limit: a.limit }),
 );
 tool("get_job_match", "Latest match for a job plus its scoring history.", { job_id: z.number().int() }, (a) => ({ latest: getLatestMatch(db, a.job_id), history: getMatchHistory(db, a.job_id) }));
+
+tool(
+  "evaluate_jobs",
+  "Ask Jev (TypeSafe AI System One) the ten relevance questions about eligible, undecided postings, or about specific jobs via job_ids. CLASSIFICATION ONLY: Jev never decides. It does not change scores, eligibility or application state; a posting Jev dislikes still surfaces and a posting Jev likes is still rejected by a hard constraint. Run this BEFORE handing postings off to the candidate, so the hand-off can carry a second opinion next to the score. Answers are CACHED per (job, posting content, profile version, question set): calling it repeatedly on the same postings is free and returns the stored answers with cached=true. Pass force to ask again anyway. Requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in .env.",
+  {
+    run_id: z.number().int().nullable().optional(),
+    limit: z.number().int().optional(),
+    min_score: z.number().optional(),
+    job_ids: z.array(z.number().int()).optional(),
+    force: z.boolean().optional(),
+  },
+  (a) => runEvaluations(db, { runId: a.run_id, limit: a.limit, minScore: a.min_score, jobIds: a.job_ids, force: a.force }),
+);
+tool(
+  "get_job_evaluation",
+  "Latest Jev evaluation for a job: the ten typed answers with their probabilities. Returns null when the job has never been evaluated.",
+  { job_id: z.number().int() },
+  (a) => getLatestJobEvaluation(db, a.job_id),
+);
+tool(
+  "get_jobs_needing_evaluation",
+  "Eligible, undecided postings with no current Jev evaluation (stale when the profile version or the question set changed).",
+  { min_score: z.number().optional(), limit: z.number().int().optional() },
+  (a) => {
+    const profile = getProfileRow(db);
+    if (!profile) return [];
+    return getJobsNeedingEvaluation(db, { profileVersion: profile.version, questionSet: QUESTION_SET, minScore: a.min_score, limit: a.limit });
+  },
+);
 tool(
   "get_matching_jobs",
   "Best matching jobs (latest score per job), ordered by score then explicit compensation. Use eligible_only + min_score for application candidates.",

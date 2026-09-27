@@ -37,10 +37,25 @@ export interface DiscoveryOptions {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Search terms: explicit > candidate target_titles > current title > none (all postings). */
+/**
+ * Search terms: explicit > `discovery_terms` > candidate target_titles > current title > none.
+ *
+ * `discovery_terms` exists because discovery and scoring want opposite things. `target_titles` is
+ * what the candidate *wants to be called* - a short list of exact phrases like "Tech Lead" or
+ * "Staff Engineer" - and adapters match it as a substring of the posting title. The market does not
+ * write titles that way: "Senior Software Engineer, Backend" and "Engineering Manager" were being
+ * discarded at fetch time and never reached the scorer, so the corpus was far narrower than the
+ * search the candidate actually described.
+ *
+ * Discovery should be broad and scoring should be narrow. That split is only safe because the hard
+ * constraints are enforced (see `evaluateHardConstraints`): an irrelevant posting is now rejected
+ * with a readable reason instead of surfacing in a hand-off.
+ */
 export function resolveSearchTerms(db: DB, explicit?: string[]): string[] {
   if (explicit && explicit.length) return explicit.map((t) => normalizeText(t)).filter(Boolean);
   const prefs = getPreferences(db);
+  const discovery = prefs.discovery_terms?.value;
+  if (Array.isArray(discovery) && discovery.length) return discovery.map((t) => normalizeText(String(t))).filter(Boolean);
   const titles = prefs.target_titles?.value;
   if (Array.isArray(titles) && titles.length) return titles.map((t) => normalizeText(String(t))).filter(Boolean);
   const profile = getProfileRow(db);

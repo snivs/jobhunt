@@ -32,6 +32,7 @@ import { getApplication, getApplicationByJob } from "./db/repositories/applicati
 import { getJob, resolveJob } from "./db/repositories/jobs.js";
 import { getMarketStatistics } from "./db/repositories/market.js";
 import { getCandidateProfile, getPreferences } from "./db/repositories/profile.js";
+import { runEvaluations } from "./core/evaluation-runner.js";
 import { getRun, getRunByKey, getRunSourceResults, listRuns } from "./db/repositories/runs.js";
 import { getSourceById, syncSources } from "./db/repositories/sources.js";
 import { Logger } from "./logging/index.js";
@@ -176,6 +177,22 @@ async function main(argv: string[]): Promise<number> {
       }
       case "rescore": {
         print(rescorePending(db, config, { runId: num(flags["run-id"]) ?? null, limit: num(flags.limit) }));
+        return 0;
+      }
+      case "evaluate": {
+        // Asks Jev the ten relevance questions about eligible, undecided postings that lack a
+        // current answer. Classification only: it never changes scores, eligibility or state.
+        const jobRef = typeof flags["job-id"] === "string" ? flags["job-id"] : num(flags["job-id"]);
+        const jobId = jobRef == null ? undefined : resolveJob(db, jobRef)?.id;
+        print(
+          await runEvaluations(db, {
+            runId: num(flags["run-id"]) ?? null,
+            limit: num(flags.limit),
+            minScore: num(flags["min-score"]),
+            jobIds: jobId ? [jobId] : undefined,
+            force: flags.force === true || flags.force === "true",
+          }),
+        );
         return 0;
       }
       case "verify-job": {

@@ -5,6 +5,8 @@ import { HttpClient, SourceHttpError } from "../src/sources/http.js";
 import { parseHiringComment } from "../src/sources/hn-hiring.js";
 import { parseSalaryText, remotive } from "../src/sources/remotive.js";
 import { runDiscovery, resolveSearchTerms } from "../src/sources/runner.js";
+import { matchesTerms } from "../src/sources/types.js";
+import { setPreference, upsertProfile } from "../src/db/repositories/profile.js";
 import { createRun, getRun } from "../src/db/repositories/runs.js";
 import { countJobs } from "../src/db/repositories/jobs.js";
 import { ROOT, testDb } from "./helpers.js";
@@ -117,5 +119,32 @@ describe("source adapters and discovery runner", () => {
     const { db } = testDb();
     expect(resolveSearchTerms(db, ["Staff Engineer"])).toEqual(["staff engineer"]);
     expect(resolveSearchTerms(db)).toEqual([]);
+  });
+});
+
+describe("discovery terms", () => {
+  it("prefers discovery_terms over target_titles, so the fetch filter is broader than the wish list", () => {
+    const { db } = testDb();
+    upsertProfile(db, { full_name: "Test" });
+    setPreference(db, "target_titles", ["Tech Lead", "Staff Engineer"]);
+    expect(resolveSearchTerms(db)).toEqual(["tech lead", "staff engineer"]);
+
+    setPreference(db, "discovery_terms", ["software engineer", "developer"]);
+    expect(resolveSearchTerms(db)).toEqual(["software engineer", "developer"]);
+
+    // An explicit list from the CLI still wins over both.
+    expect(resolveSearchTerms(db, ["architect"])).toEqual(["architect"]);
+  });
+
+  it("matches the market titles that target_titles alone would discard", () => {
+    const terms = ["software engineer", "engineering manager", "developer"];
+    for (const title of [
+      "Senior Software Engineer, Backend (Money Movement)",
+      "Engineering Manager, RC Capital",
+      "Senior Java & React Developer",
+    ]) {
+      expect(matchesTerms(terms, title), title).toBe(true);
+      expect(matchesTerms(["tech lead", "staff engineer"], title), title).toBe(false);
+    }
   });
 });

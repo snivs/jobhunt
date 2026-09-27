@@ -18,7 +18,9 @@
     "jobhunt": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@ai-sdk/typesafe-ai": "^3.0.8",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "ai": "^7.0.116",
     "better-sqlite3": "^12.9.0",
     "yaml": "^2.9.0",
     "zod": "^4.5.4"
