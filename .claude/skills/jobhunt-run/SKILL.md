@@ -164,10 +164,45 @@ Job Hunter - YYYY-MM-DD HH:MM (America/Chihuahua)
 
 Vacantes: descubiertas / nuevas / relevantes / score >= N / seleccionadas
 (cada vacante mencionada se identifica como `VAC-<run>.<job>` + empresa + titulo)
-Hand-offs: SIEMPRE como tabla Markdown, una fila por vacante, columnas exactas:
-| Vacante (codigo + empresa + puesto, con link al posting) | Compensacion | Ubicacion/remoto/hibrido | Por que si | Por que no |
-"Por que si" / "Por que no": hechos del analisis (score, skills cubiertas y faltantes, restricciones, sponsorship, salario vs objetivo), 2-4 frases cada una. La misma tabla va en el reporte del vault y en el mensaje al usuario.
-Cada fila cita ademas la lectura de Jev con sus probabilidades, marcada como tal para que no se confunda con el score determinista. Como minimo: "deberia trabajar aqui", "se puede tomar desde Mexico" y cualquier respuesta que CONTRADIGA al scorer. Una contradiccion entre Jev y el score se senala explicitamente, no se promedia ni se esconde: son dos lecturas distintas y el candidato decide.
+Hand-offs: **una vacante a la vez, NUNCA una tabla de varias** (decision del candidato 2026-09-26;
+reemplaza el formato de tabla del 2026-09-11, que resultaba ilegible cuando cada fila tenia que
+cargar diez respuestas de Jev).
+
+Formato de cada vacante:
+
+```
+## VAC-<run>.<job> — <empresa> — [<puesto>](<url del posting>)
+**Score <n> · <compensacion o "Sin salario publicado"> · <modalidad> <alcance> · <seniority>**
+
+- ¿Deberia trabajar aqui? — **Si/No** — <confianza>%
+- Clasificacion — **Remoto/Presencial/Hibrido** — <confianza>%
+- ¿Requiere reubicacion? — **Si/No** — <confianza>%
+- ¿Encajan mis habilidades reportadas? — **Si/No** — <confianza>%
+- ¿Cumplo requisitos de contratacion? — **Si/No** — <confianza>%
+- ¿Cumplo requisitos tecnicos? — **Si/No** — <confianza>%
+- ¿Puede engancharme viviendo en Mexico? — **Si/No** — <confianza>%
+- ¿Exige semana de 6 dias? — **Si/No** — <confianza>%
+- ¿Es solo soporte? — **Si/No** — <confianza>%
+- Responsabilidad principal — **<arquitectura/liderazgo tecnico/desarrollo con IA/otra>** — <confianza>%
+
+> Dos o tres lineas de lectura honesta, con hechos del analisis.
+```
+
+Reglas del formato:
+- **El enlace va sobre el nombre del puesto**, nunca una URL suelta.
+- La confianza es la de Jev **en la respuesta que dio**, no la probabilidad de "si". Para una
+  booleana cuya probabilidad de verdadero es `p`: si la respuesta es Si, la confianza es `p`; si es
+  No, es `1 - p`. Para una opcion, es la probabilidad de la opcion elegida. Explicar esta convencion
+  la primera vez que se muestre un bloque en una conversacion.
+- La linea de cierre dice **donde Jev y el score determinista se contradicen**, explicitamente. No
+  se promedian ni se esconde la discrepancia: son dos lecturas distintas y decide el candidato.
+- Una vacante sin evaluacion de Jev se presenta igual, con las viñetas marcadas `(sin evaluar)`, y
+  se dice por que falta (sin credenciales, fallo de red, sin analisis).
+- **Se espera la decision del candidato antes de pasar a la siguiente vacante.** Nada de listas
+  largas: si hay muchas elegibles, se dice cuantas quedan en la fila y se presenta la de arriba.
+
+El reporte del vault guarda las mismas vacantes con el mismo contenido; ahi si pueden ir una tras
+otra en el mismo documento, porque se lee como archivo y no como conversacion.
 Aplicaciones: enviadas por fuente / bloqueadas / requieren tu respuesta / hand-off manual
 Skills observadas: top y variacion vs periodo anterior
 Compensacion: rangos explicitos / estimaciones / mediana explicita (moneda)
