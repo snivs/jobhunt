@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SourceConfig } from "../src/config/index.js";
 import { Logger } from "../src/logging/index.js";
 import { HttpClient, SourceHttpError } from "../src/sources/http.js";
-import { parseHiringComment } from "../src/sources/hn-hiring.js";
+import { cleanTitleSegment, parseHiringComment } from "../src/sources/hn-hiring.js";
 import { parseSalaryText, remotive } from "../src/sources/remotive.js";
 import { runDiscovery, resolveSearchTerms } from "../src/sources/runner.js";
 import { matchesTerms } from "../src/sources/types.js";
@@ -146,5 +146,55 @@ describe("discovery terms", () => {
       expect(matchesTerms(terms, title), title).toBe(true);
       expect(matchesTerms(["tech lead", "staff engineer"], title), title).toBe(false);
     }
+  });
+});
+
+describe("Hacker News title parsing", () => {
+  it("unwraps a role written as a regex instead of dropping the job", () => {
+    // Better Stack really posted this. A developer-tools company can afford the joke; the pipeline
+    // cannot afford to carry "/^Full-?stack Engineer$/i" into a hand-off.
+    expect(cleanTitleSegment("/^Full-?stack Engineer$/i")).toEqual({ title: "Full-stack Engineer", rescued: false });
+  });
+
+  it("leaves a title that already reads like a title completely alone", () => {
+    for (const t of [
+      "Sr. Engineer",
+      "Senior Engineer (Platform)",
+      "Software Engineer / Senior Software Engineer / Sr. Staff Software Engineer",
+      "Founding Engineer, Data Scientist, Founding Operations, Founding Marketer",
+      "Tech leads (Platform and Software) and Platform engineers",
+    ]) {
+      expect(cleanTitleSegment(t), t).toEqual({ title: t, rescued: false });
+    }
+  });
+
+  it("trims the pitch off a segment that swallowed the whole comment", () => {
+    const got = cleanTitleSegment(
+      "Senior SWE, Senior DevOps US animal-health distributor. We build .NET/Angular apps and hardware UIs that talk to lab machines.",
+    );
+    expect(got?.title).toBe("Senior SWE, Senior DevOps US animal-health distributor");
+    expect(got?.rescued).toBe(true);
+  });
+
+  it("matches plural role words, which is how HN posters actually write them", () => {
+    const { title } = cleanTitleSegment("Platform engineers")!;
+    expect(title).toBe("Platform engineers");
+    expect(cleanTitleSegment("Cheese and biscuits")).toBeNull();
+  });
+
+  it("prefers an untouched title over one rescued from prose", () => {
+    const parsed = parseHiringComment(
+      "Acme | Staff Engineer | Remote | We are building the future of widgets and we have raised a lot of money and we are hiring engineers across the stack right now.",
+    );
+    expect(parsed.title).toBe("Staff Engineer");
+  });
+
+  it("truncates an unsplittable list of roles rather than dropping the posting", () => {
+    const long =
+      "Junior SWE ($300k + equity + bonus), SWE ($350k + equity + bonus), Research Engineer, Alignment ($300k-$400k), Infrastructure Engineer, Product Engineer";
+    const got = cleanTitleSegment(long);
+    expect(got).not.toBeNull();
+    expect(got!.title.length).toBeLessThanOrEqual(120);
+    expect(long.startsWith(got!.title)).toBe(true);
   });
 });
