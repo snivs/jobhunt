@@ -97,7 +97,7 @@ export function runRuleAnalysis(
           }
         : null;
 
-    const analysis = analyzeJobRules(db, row, compensation);
+    const analysis = analyzeJobRules(db, row, compensation, profile.practiceKeywords ?? []);
 
     for (const s of analysis.skills) {
       recordJobSkill(db, {

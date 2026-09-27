@@ -181,3 +181,44 @@ describe("excluded_responsibility and unevaluable custom constraints", () => {
     expect(explainMatch(r)).toContain("Manual checks:");
   });
 });
+
+describe("practice_match: scoring how the work is described", () => {
+  const withKeywords = (extra: Partial<CandidateProfile> = {}) =>
+    sampleProfile({ practiceKeywords: ["evaluation harness", "spec-driven development", "agent reliability", "human-in-the-loop"], ...extra });
+
+  it("does not vote when the posting says nothing about how the work is done", () => {
+    // Critical: an ordinary architecture posting that never mentions these must not be punished.
+    // Scoring it zero would drag down every role that simply does not talk about process.
+    const r = scoreJob(withKeywords(), sampleAnalysis({ practiceSignals: [] }), options);
+    const f = r.factors.find((x) => x.factor === "practice_match")!;
+    expect(f.applicable).toBe(false);
+    expect(r.factors.filter((x) => x.applicable).map((x) => x.factor)).not.toContain("practice_match");
+  });
+
+  it("rewards a posting written by someone who works this way", () => {
+    const r = scoreJob(withKeywords(), sampleAnalysis({ practiceSignals: ["evaluation harness", "agent reliability"] }), options);
+    const f = r.factors.find((x) => x.factor === "practice_match")!;
+    expect(f.applicable).toBe(true);
+    expect(f.score).toBe(80);
+    expect(f.explanation).toMatch(/evaluation harness/);
+  });
+
+  it("flattens rather than rewarding keyword stuffing", () => {
+    const three = scoreJob(withKeywords(), sampleAnalysis({ practiceSignals: ["a", "b", "c"] }), options);
+    const eight = scoreJob(withKeywords(), sampleAnalysis({ practiceSignals: ["a", "b", "c", "d", "e", "f", "g", "h"] }), options);
+    const s = (r: typeof three) => r.factors.find((x) => x.factor === "practice_match")!.score;
+    expect(s(three)).toBe(100);
+    expect(s(eight)).toBe(s(three));
+  });
+
+  it("stays inapplicable when the candidate has no keywords configured", () => {
+    const r = scoreJob(sampleProfile(), sampleAnalysis({ practiceSignals: ["evaluation harness"] }), options);
+    expect(r.factors.find((x) => x.factor === "practice_match")!.applicable).toBe(false);
+  });
+
+  it("raises the overall score of an otherwise identical posting", () => {
+    const plain = scoreJob(withKeywords(), sampleAnalysis({ practiceSignals: [] }), options);
+    const rich = scoreJob(withKeywords(), sampleAnalysis({ practiceSignals: ["evaluation harness", "spec-driven development", "agent reliability"] }), options);
+    expect(rich.overallScore).toBeGreaterThan(plain.overallScore);
+  });
+});

@@ -253,6 +253,11 @@ export function buildScoringProfile(db: DB): CandidateProfile | null {
     period: compRaw.period ?? "year",
   };
 
+  // Body phrases used by the practice_match factor. Stored under scoring_boost_keywords so the
+  // geographic and negative lists can live beside them without leaking into discovery terms.
+  const boost = get("scoring_boost_keywords") as { keywords?: unknown } | undefined;
+  const practiceKeywords = asStringArray(boost?.keywords);
+
   const workModes = asStringArray(get("work_modes")) as WorkMode[];
   const acceptableCountries = asStringArray(get("acceptable_countries"));
   const employmentTypes = asStringArray(get("employment_types"));
@@ -286,6 +291,7 @@ export function buildScoringProfile(db: DB): CandidateProfile | null {
     companyTypesPreferred: asStringArray(get("company_types_preferred")),
     employmentTypes,
     hardConstraints,
+    practiceKeywords,
   };
 }
 

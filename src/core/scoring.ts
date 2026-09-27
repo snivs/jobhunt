@@ -60,6 +60,12 @@ export interface CandidateProfile {
   companyTypesPreferred: string[];
   employmentTypes: string[];
   hardConstraints: HardConstraint[];
+  /**
+   * Phrases employers write for the work he actually does: specifying behaviour, building
+   * evaluation harnesses, orchestrating agents. They live in the BODY of a posting, never its
+   * title, which is why they are scored rather than searched.
+   */
+  practiceKeywords?: string[];
 }
 
 export interface JobSkillRequirement {
@@ -97,6 +103,8 @@ export interface JobAnalysis {
   responsibilities: string[];
   workAuthorizationRequired: string[] | null;
   missingInformation: string[];
+  /** Practice keywords found in the posting body. Optional: analyses stored before 2026-09-27 lack it. */
+  practiceSignals?: string[];
 }
 
 export interface FactorScore {
@@ -475,6 +483,38 @@ function scorePreference(profile: CandidateProfile, job: JobAnalysis): Partial {
   return { factor: "preference_match", score: clamp(score), applicable: true, explanation: notes.length ? notes.join("; ") : "No specific preference signals" };
 }
 
+/**
+ * How much the posting describes the way the candidate actually works.
+ *
+ * He runs engineering processes: he specifies behaviour, writes tests and acceptance criteria, and
+ * delegates implementation to agents. Employers who want that write it in the body of the posting -
+ * "evaluation harness", "spec-driven development", "agent reliability", "human-in-the-loop" - while
+ * the title stays something generic like Staff Engineer. Searching for these phrases finds almost
+ * nothing, because they are not titles; scoring on them promotes the right postings out of a pile
+ * of identically-titled ones.
+ *
+ * Deliberately NOT applicable when the posting mentions none of them. A posting that says nothing
+ * about how the work is done is not evidence against the candidate, and scoring it zero would drag
+ * down every ordinary architecture role. The weights renormalize over applicable factors, so an
+ * absent signal simply does not vote.
+ */
+function scorePractice(profile: CandidateProfile, job: JobAnalysis): Partial {
+  const wanted = profile.practiceKeywords ?? [];
+  const found = job.practiceSignals ?? [];
+  if (wanted.length === 0 || found.length === 0) {
+    return { factor: "practice_match", score: 0, applicable: false, explanation: "No practice signals in the posting" };
+  }
+  // Three distinct phrases is already a posting written by someone who works this way; more than
+  // that is the same signal repeated, so the curve flattens rather than rewarding keyword stuffing.
+  const score = clamp(40 + Math.min(found.length, 3) * 20);
+  return {
+    factor: "practice_match",
+    score,
+    applicable: true,
+    explanation: `Describes the candidate's way of working: ${found.slice(0, 5).join(", ")}`,
+  };
+}
+
 function evaluateHardConstraints(
   profile: CandidateProfile,
   job: JobAnalysis,
@@ -572,6 +612,7 @@ export function scoreJob(profile: CandidateProfile, job: JobAnalysis, options: S
     scoreIndustry(profile, job),
     scoreResponsibilities(profile, job),
     scorePreference(profile, job),
+    scorePractice(profile, job),
   ];
   const factors: FactorScore[] = partials.map((f) => ({
     factor: f.factor,

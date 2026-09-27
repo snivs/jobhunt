@@ -46,6 +46,10 @@ export const weightsSchema = z.object({
   industry_match: z.number().nonnegative(),
   responsibility_match: z.number().nonnegative(),
   preference_match: z.number().nonnegative(),
+  // Added 2026-09-27. Defaulted so a config written before this key still validates: the weights
+  // renormalize over the factors that actually apply, so an extra factor only affects postings
+  // where it fires.
+  practice_match: z.number().nonnegative().default(0.06),
 });
 export type ScoringWeights = z.infer<typeof weightsSchema>;
 export type ScoringFactor = keyof ScoringWeights;

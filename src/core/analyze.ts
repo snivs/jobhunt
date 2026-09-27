@@ -217,9 +217,15 @@ export function analyzeJobRules(
   db: DB,
   job: JobForAnalysis,
   compensation: JobAnalysis["compensation"] = null,
+  practiceKeywords: string[] = [],
 ): JobAnalysis {
   const text = htmlToText(job.description) ?? "";
   const segments = segment(text);
+
+  // Phrases employers write for spec-driven, agent-orchestration work. Matched case-insensitively
+  // against the whole body, because they appear in prose rather than in a requirements list.
+  const haystack = text.toLowerCase();
+  const practiceSignals = practiceKeywords.filter((k) => k && haystack.includes(k.toLowerCase()));
   const skills = extractSkills(db, segments);
 
   const years = firstMatch(text, YEARS_RES);
@@ -275,6 +281,7 @@ export function analyzeJobRules(
     responsibilities,
     workAuthorizationRequired,
     missingInformation: missing,
+    practiceSignals,
   };
 }
 
