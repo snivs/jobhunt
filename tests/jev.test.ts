@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildQuestions, buildState, jevModel, QUESTION_SET, RESPONSIBILITIES, WORK_ARRANGEMENTS } from "../src/core/jev.js";
+import { buildQuestions, buildState, jevModel, QUESTION_SET, RESPONSIBILITIES, stateHash, WORK_ARRANGEMENTS } from "../src/core/jev.js";
 import { findCachedEvaluation, getJobsNeedingEvaluation, getLatestJobEvaluation, recordJobEvaluation } from "../src/db/repositories/evaluations.js";
 import { runEvaluations } from "../src/core/evaluation-runner.js";
-import { upsertProfile } from "../src/db/repositories/profile.js";
+import { buildScoringProfile, upsertProfile } from "../src/db/repositories/profile.js";
 import { sampleAnalysis, sampleProfile, testDb } from "./helpers.js";
 
 describe("jev relevance questions", () => {
@@ -96,19 +96,17 @@ describe("job evaluation storage", () => {
     expect(row.should_work_here).toBeNull();
   });
 
-  it("treats an evaluation from another profile version or question set as stale", () => {
+  it("lists eligible undecided postings and leaves staleness to the cache", () => {
     const { db } = testDb();
     seedJob(db);
     db.prepare(
       "INSERT INTO job_matches (job_id, profile_version, scoring_version, overall_score, eligible, factors_json, strengths_json, risks_json, hard_constraint_failures_json, missing_information_json, scored_at, created_at) VALUES (1,5,'1.0',88,1,'[]','[]','[]','[]','[]','2026-09-01','2026-09-01')",
     ).run();
-
-    const pending = () => getJobsNeedingEvaluation(db, { profileVersion: 5, questionSet: QUESTION_SET }).map((r) => r.job_id);
+    const pending = () => getJobsNeedingEvaluation(db).map((r) => r.job_id);
     expect(pending()).toEqual([1]);
 
     // A job scored under several profile versions keeps one job_matches row per version. Joining
-    // them multiplies the job into duplicates, and every duplicate is a paid model call on a
-    // posting already evaluated in the same batch.
+    // them would multiply the job into duplicates, and every duplicate is a paid model call.
     db.prepare(
       "INSERT INTO job_matches (job_id, profile_version, scoring_version, overall_score, eligible, factors_json, strengths_json, risks_json, hard_constraint_failures_json, missing_information_json, scored_at, created_at) VALUES (1,4,'1.0',90,1,'[]','[]','[]','[]','[]','2026-09-02','2026-09-02')",
     ).run();
@@ -117,22 +115,9 @@ describe("job evaluation storage", () => {
     ).run();
     expect(pending(), "one row per job, never one per match version").toEqual([1]);
 
-    // A decided application takes the job out of the queue entirely.
+    // A decided application takes the job out of the pool entirely.
     db.prepare("UPDATE applications SET status='SKIPPED' WHERE job_id=1").run();
     expect(pending(), "decided jobs are not re-evaluated").toEqual([]);
-    db.prepare("UPDATE applications SET status='MATCHED' WHERE job_id=1").run();
-
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 4, questionSet: QUESTION_SET, contentHash: "h", answers });
-    expect(pending(), "older profile version is stale").toEqual([1]);
-
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: "something-else", contentHash: "h", answers });
-    expect(pending(), "different question set is stale").toEqual([1]);
-
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "h", error: "boom" });
-    expect(pending(), "a failed evaluation is retried").toEqual([1]);
-
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "h", answers });
-    expect(pending(), "a current answer clears it").toEqual([]);
   });
 });
 
@@ -162,58 +147,78 @@ describe("evaluation cache", () => {
     ).run();
   }
 
-  const key = { jobId: 1, contentHash: "hash-v1", profileVersion: 5, questionSet: QUESTION_SET };
+  const key = { jobId: 1, stateHash: "state-v1", questionSet: QUESTION_SET };
 
   it("serves an identical question about an identical posting from storage", () => {
     const { db } = testDb();
     seed(db);
     expect(findCachedEvaluation(db, key)).toBeNull();
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", answers });
+    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", stateHash: "state-v1", answers });
     expect(findCachedEvaluation(db, key)?.should_work_here).toBe(0.51);
   });
 
-  it("misses when any part of the cache identity changed", () => {
+  it("misses when anything Jev would see changed", () => {
     const { db } = testDb();
     seed(db);
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", answers });
+    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", stateHash: "state-v1", answers });
 
-    expect(findCachedEvaluation(db, { ...key, contentHash: "hash-v2" }), "employer edited the posting").toBeNull();
-    expect(findCachedEvaluation(db, { ...key, profileVersion: 6 }), "candidate changed their profile").toBeNull();
+    // The state hash digests the candidate profile, the analysis and the description at once, so
+    // an edited posting, a changed profile and an improved analyser are all one kind of miss.
+    expect(findCachedEvaluation(db, { ...key, stateHash: "state-v2" }), "the input changed").toBeNull();
     expect(findCachedEvaluation(db, { ...key, questionSet: "v2" }), "we changed the questions").toBeNull();
     expect(findCachedEvaluation(db, { ...key, jobId: 2 }), "different posting").toBeNull();
+  });
+
+  it("derives the same state hash for the same input and a different one when the analysis changes", () => {
+    const base = stateHash(sampleProfile(), sampleAnalysis(), "text");
+    expect(stateHash(sampleProfile(), sampleAnalysis(), "text")).toBe(base);
+    expect(stateHash(sampleProfile(), sampleAnalysis({ skills: [] }), "text"), "analysis changed").not.toBe(base);
+    expect(stateHash(sampleProfile({ relocation: true }), sampleAnalysis(), "text"), "profile changed").not.toBe(base);
+    expect(stateHash(sampleProfile(), sampleAnalysis(), "other text"), "posting edited").not.toBe(base);
   });
 
   it("never serves a failed call from cache, so an outage does not stick", () => {
     const { db } = testDb();
     seed(db);
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", error: "Cloudflare: HTTP 503" });
+    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", stateHash: "state-v1", error: "Cloudflare: HTTP 503" });
     expect(findCachedEvaluation(db, key)).toBeNull();
   });
 
-  it("treats unknown content as a miss rather than assuming it matches", () => {
+  it("treats an unknown state as a miss rather than assuming it matches", () => {
     const { db } = testDb();
     seed(db);
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: null, answers });
-    expect(findCachedEvaluation(db, { ...key, contentHash: null })).toBeNull();
+    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, stateHash: null, answers });
+    expect(findCachedEvaluation(db, { ...key, stateHash: null })).toBeNull();
   });
 
-  it("re-queues a posting the employer edited, and only then", () => {
+  it("a posting the analyser or the employer changed is a cache miss, so it gets asked again", () => {
     const { db } = testDb();
     seed(db);
-    const pending = () => getJobsNeedingEvaluation(db, { profileVersion: 5, questionSet: QUESTION_SET }).map((r) => r.job_id);
+    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", stateHash: "state-v1", answers });
 
-    recordJobEvaluation(db, { jobId: 1, profileVersion: 5, questionSet: QUESTION_SET, contentHash: "hash-v1", answers });
-    expect(pending(), "unchanged posting stays out of the queue").toEqual([]);
-
-    db.prepare("UPDATE jobs SET content_hash = 'hash-v2' WHERE id = 1").run();
-    expect(pending(), "edited posting comes back").toEqual([1]);
+    expect(findCachedEvaluation(db, key), "nothing changed").not.toBeNull();
+    expect(findCachedEvaluation(db, { ...key, stateHash: "state-v2" }), "input changed").toBeNull();
   });
 
   it("runEvaluations reports a cache hit without calling the model", async () => {
     const { db } = testDb();
     seed(db);
     const profile = upsertProfile(db, { full_name: "Test" });
-    recordJobEvaluation(db, { jobId: 1, profileVersion: profile.version, questionSet: QUESTION_SET, contentHash: "hash-v1", answers });
+
+    // The runner keys the cache on the state it would actually send, so the stored row must carry
+    // the hash of that same state: profile + stored analysis + description.
+    const analysis = sampleAnalysis({ jobId: 1 });
+    db.prepare("UPDATE job_matches SET analysis_json = ? WHERE job_id = 1").run(JSON.stringify(analysis));
+    const scoringProfile = buildScoringProfile(db)!;
+    const hash = stateHash(scoringProfile, analysis, null);
+    recordJobEvaluation(db, {
+      jobId: 1,
+      profileVersion: profile.version,
+      questionSet: QUESTION_SET,
+      contentHash: "hash-v1",
+      stateHash: hash,
+      answers,
+    });
 
     // No credentials are set, so any real call would throw. A clean result proves nothing was sent.
     const summary = await runEvaluations(db, { jobIds: [1], env: {} as NodeJS.ProcessEnv });

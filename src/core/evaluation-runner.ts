@@ -3,7 +3,7 @@ import { getJob } from "../db/repositories/jobs.js";
 import { getLatestMatch } from "../db/repositories/matches.js";
 import { buildScoringProfile, getProfileRow } from "../db/repositories/profile.js";
 import { findCachedEvaluation, getJobsNeedingEvaluation, recordJobEvaluation, type JobEvaluationRow } from "../db/repositories/evaluations.js";
-import { evaluateJob, QUESTION_SET, type JevAnswers } from "./jev.js";
+import { evaluateJob, QUESTION_SET, stateHash, type JevAnswers } from "./jev.js";
 import type { JobAnalysis } from "./scoring.js";
 
 export interface EvaluationSummary {
@@ -16,17 +16,6 @@ export interface EvaluationSummary {
   skipped_no_analysis: number;
   results: Array<{ job_id: number; code: string; title: string; company: string | null; cached?: boolean; answers?: JevAnswers; error?: string }>;
 }
-
-/**
- * Runs the ten relevance questions over eligible, undecided postings that lack a current answer.
- *
- * This runs BEFORE a posting is proposed to the candidate, which is the whole point: the candidate
- * sees Jev's read next to the deterministic score, not instead of it. Nothing here changes
- * `job_matches`, eligibility, or any application state. A posting Jev dislikes still surfaces; a
- * posting Jev likes is still rejected if a hard constraint says so.
- *
- * One failure never stops the batch: it is recorded on the row and retried next time.
- */
 
 /** Rebuilds the typed answers from a stored row, so a cache hit looks like a fresh evaluation. */
 function rowToAnswers(row: JobEvaluationRow): JevAnswers {
@@ -45,6 +34,16 @@ function rowToAnswers(row: JobEvaluationRow): JevAnswers {
   };
 }
 
+/**
+ * Runs the ten relevance questions over eligible, undecided postings that lack a current answer.
+ *
+ * This runs BEFORE a posting is proposed to the candidate, which is the whole point: the candidate
+ * sees Jev's read next to the deterministic score, not instead of it. Nothing here changes
+ * `job_matches`, eligibility, or any application state. A posting Jev dislikes still surfaces; a
+ * posting Jev likes is still rejected if a hard constraint says so.
+ *
+ * One failure never stops the batch: it is recorded on the row and retried next time.
+ */
 export async function runEvaluations(
   db: DB,
   opts: {
@@ -66,12 +65,9 @@ export async function runEvaluations(
         const j = getJob(db, id);
         return { job_id: id, code: j?.code ?? String(id), title: j?.title ?? "", company_name: j?.company_name ?? null };
       })
-    : getJobsNeedingEvaluation(db, {
-        profileVersion: profileRow.version,
-        questionSet: QUESTION_SET,
-        minScore: opts.minScore,
-        limit: opts.limit ?? 25,
-      });
+    // A generous pool: `limit` below caps MODEL CALLS, not candidates, so cache hits do not eat
+    // the budget and a run can serve many answers while paying for few.
+    : getJobsNeedingEvaluation(db, { minScore: opts.minScore, limit: (opts.limit ?? 25) * 10 });
 
   const summary: EvaluationSummary = {
     profile_version: profileRow.version,
@@ -83,21 +79,25 @@ export async function runEvaluations(
     results: [],
   };
 
+  const callBudget = opts.limit ?? 25;
+
   for (const t of targets) {
+    if (summary.evaluated + summary.failed >= callBudget) break;
     const job = getJob(db, t.job_id);
     const contentHash = job?.content_hash ?? null;
+    const analysis: JobAnalysis | null = getLatestMatch(db, t.job_id)?.analysis ?? null;
+    if (!analysis) {
+      // Jev reasons over the structured analysis; without it there is nothing to ask about, and
+      // nothing to key a cache lookup on either.
+      summary.skipped_no_analysis++;
+      continue;
+    }
+    const hash = stateHash(profile, analysis, job?.description ?? null);
 
-    // The cache is consulted FIRST, before anything else about the job is loaded. Checked on every
-    // path, including an explicit job_ids request, so asking about the same posting twice costs
-    // nothing. A cached answer needs no analysis either: we already have the answer. `force` is the
-    // way to mean it.
+    // Checked on every path, including an explicit job_ids request, so asking about the same
+    // posting twice costs nothing. `force` is the way to mean it.
     if (!opts.force) {
-      const hit = findCachedEvaluation(db, {
-        jobId: t.job_id,
-        contentHash,
-        profileVersion: profileRow.version,
-        questionSet: QUESTION_SET,
-      });
+      const hit = findCachedEvaluation(db, { jobId: t.job_id, stateHash: hash, questionSet: QUESTION_SET });
       if (hit) {
         summary.cached++;
         summary.results.push({
@@ -112,13 +112,6 @@ export async function runEvaluations(
       }
     }
 
-    const analysis: JobAnalysis | null = getLatestMatch(db, t.job_id)?.analysis ?? null;
-    if (!analysis) {
-      // Jev reasons over the structured analysis; without it there is nothing to ask about.
-      summary.skipped_no_analysis++;
-      continue;
-    }
-
     try {
       const answers = await evaluateJob(profile, analysis, job?.description ?? null, opts.env);
       recordJobEvaluation(db, {
@@ -127,6 +120,7 @@ export async function runEvaluations(
         profileVersion: profileRow.version,
         questionSet: QUESTION_SET,
         contentHash,
+        stateHash: hash,
         answers,
       });
       summary.evaluated++;
@@ -139,6 +133,7 @@ export async function runEvaluations(
         profileVersion: profileRow.version,
         questionSet: QUESTION_SET,
         contentHash,
+        stateHash: hash,
         error: message,
       });
       summary.failed++;

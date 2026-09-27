@@ -33,6 +33,7 @@ import { getJob, resolveJob } from "./db/repositories/jobs.js";
 import { getMarketStatistics } from "./db/repositories/market.js";
 import { getCandidateProfile, getPreferences } from "./db/repositories/profile.js";
 import { runEvaluations } from "./core/evaluation-runner.js";
+import { runRuleAnalysis } from "./core/analyze-runner.js";
 import { getRun, getRunByKey, getRunSourceResults, listRuns } from "./db/repositories/runs.js";
 import { getSourceById, syncSources } from "./db/repositories/sources.js";
 import { Logger } from "./logging/index.js";
@@ -177,6 +178,12 @@ async function main(argv: string[]): Promise<number> {
       }
       case "rescore": {
         print(rescorePending(db, config, { runId: num(flags["run-id"]) ?? null, limit: num(flags.limit) }));
+        return 0;
+      }
+      case "analyze": {
+        // Rule-based first pass over postings with no analysis yet. Not a replacement for an agent
+        // read: every analysis it writes says so in missingInformation.
+        print(runRuleAnalysis(db, config, { runId: num(flags["run-id"]) ?? null, limit: num(flags.limit), force: flags.force === true || flags.force === "true" }));
         return 0;
       }
       case "evaluate": {

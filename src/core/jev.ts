@@ -1,5 +1,6 @@
 import { experimental_evaluate, type Experimental_EvaluationQuestion } from "ai";
 import { createTypeSafeAi } from "@ai-sdk/typesafe-ai";
+import { sha256 } from "./normalize.js";
 import type { CandidateProfile, JobAnalysis } from "./scoring.js";
 
 /**
@@ -205,6 +206,16 @@ export function buildState(profile: CandidateProfile, job: JobAnalysis, descript
       descriptionExcerpt: (description ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 4000),
     },
   };
+}
+
+/**
+ * Digest of the exact state Jev is shown. This is the cache identity: "the model has already been
+ * asked this question about precisely this input". It covers the candidate profile, the structured
+ * analysis and the description excerpt at once, so a change to any of them - including a change to
+ * the rule extractor that produces the analysis - is a cache miss rather than a stale hit.
+ */
+export function stateHash(profile: CandidateProfile, job: JobAnalysis, description: string | null): string {
+  return sha256(JSON.stringify(buildState(profile, job, description)));
 }
 
 /** Asks Jev the ten relevance questions about one posting. Throws on transport or auth failure. */

@@ -37,6 +37,7 @@ import { getMarketSnapshots, getMarketStatistics, getSourceStatistics, saveMarke
 import { getLatestMatch, getMatchHistory, getMatchingJobs, recordMatch } from "../db/repositories/matches.js";
 import { buildScoringProfile, getCandidateProfile, getProfileRow, removeCandidateSkill, setCandidateSkill, setPreference, upsertProfile } from "../db/repositories/profile.js";
 import { runEvaluations } from "../core/evaluation-runner.js";
+import { runRuleAnalysis } from "../core/analyze-runner.js";
 import { getJobsNeedingEvaluation, getLatestJobEvaluation } from "../db/repositories/evaluations.js";
 import { QUESTION_SET } from "../core/jev.js";
 import { getCompaniesNeedingResearch, getLatestCompanyResearch, recordCompanyResearch } from "../db/repositories/research.js";
@@ -568,6 +569,12 @@ tool(
 tool("get_job_match", "Latest match for a job plus its scoring history.", { job_id: z.number().int() }, (a) => ({ latest: getLatestMatch(db, a.job_id), history: getMatchHistory(db, a.job_id) }));
 
 tool(
+  "analyze_pending",
+  "Rule-analyse and score every active posting that has no analysis yet: extracts skills (with required/preferred/mentioned from section context), years of experience, leadership, languages and work-authorisation statements, then scores it. A FIRST PASS over a backlog, not a replacement for reading a posting: every analysis it writes carries 'rule-extracted: not read by an agent' in missing_information, and the scorer renormalizes over the factors it could determine. Use it to make a large corpus rankable, then read the top of the sorted list properly.",
+  { run_id: z.number().int().nullable().optional(), limit: z.number().int().optional(), force: z.boolean().optional() },
+  (a) => runRuleAnalysis(db, config, { runId: a.run_id, limit: a.limit, force: a.force }),
+);
+tool(
   "evaluate_jobs",
   "Ask Jev (TypeSafe AI System One) the ten relevance questions about eligible, undecided postings, or about specific jobs via job_ids. CLASSIFICATION ONLY: Jev never decides. It does not change scores, eligibility or application state; a posting Jev dislikes still surfaces and a posting Jev likes is still rejected by a hard constraint. Run this BEFORE handing postings off to the candidate, so the hand-off can carry a second opinion next to the score. Answers are CACHED per (job, posting content, profile version, question set): calling it repeatedly on the same postings is free and returns the stored answers with cached=true. Pass force to ask again anyway. Requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in .env.",
   {
@@ -587,13 +594,9 @@ tool(
 );
 tool(
   "get_jobs_needing_evaluation",
-  "Eligible, undecided postings with no current Jev evaluation (stale when the profile version or the question set changed).",
+  "Eligible, undecided postings, best score first: the pool evaluate_jobs walks. It does not filter by whether an answer already exists - that depends on the state hash, which evaluate_jobs checks per job.",
   { min_score: z.number().optional(), limit: z.number().int().optional() },
-  (a) => {
-    const profile = getProfileRow(db);
-    if (!profile) return [];
-    return getJobsNeedingEvaluation(db, { profileVersion: profile.version, questionSet: QUESTION_SET, minScore: a.min_score, limit: a.limit });
-  },
+  (a) => getJobsNeedingEvaluation(db, { minScore: a.min_score, limit: a.limit }),
 );
 tool(
   "get_matching_jobs",

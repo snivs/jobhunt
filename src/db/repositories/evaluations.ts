@@ -11,6 +11,7 @@ export interface JobEvaluationRow {
   question_set: string;
   answers_json: string;
   content_hash: string | null;
+  state_hash: string | null;
   should_work_here: number | null;
   work_arrangement: string | null;
   relocation_required: number | null;
@@ -39,6 +40,7 @@ export function recordJobEvaluation(
     questionSet: string;
     engine?: string;
     contentHash?: string | null;
+    stateHash?: string | null;
     answers?: JevAnswers | null;
     error?: string | null;
   },
@@ -47,11 +49,11 @@ export function recordJobEvaluation(
   const info = db
     .prepare(
       `INSERT INTO job_evaluations
-         (job_id, run_id, profile_version, engine, question_set, answers_json, content_hash,
+         (job_id, run_id, profile_version, engine, question_set, answers_json, content_hash, state_hash,
           should_work_here, work_arrangement, relocation_required, skills_fit,
           hiring_requirements_met, technical_requirements_met, workable_from_mexico,
           six_day_week, support_only, primary_responsibility, error, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       input.jobId,
@@ -61,6 +63,7 @@ export function recordJobEvaluation(
       input.questionSet,
       JSON.stringify(a?.raw ?? {}),
       input.contentHash ?? null,
+      input.stateHash ?? null,
       a?.shouldWorkHere ?? null,
       a?.workArrangement ?? null,
       a?.relocationRequired ?? null,
@@ -81,28 +84,28 @@ export function recordJobEvaluation(
 /**
  * The cache. Returns the newest successful answer for this exact combination, or null.
  *
- * Cache identity is (job, posting content, candidate profile version, question set). Jev is
- * deterministic in its inputs but not free: showing it byte-identical state and byte-identical
- * questions a second time buys nothing. Any of the four changing is a real reason to ask again -
- * the employer edited the posting, the candidate changed their preferences, or we changed what we
- * are asking. Failed rows are never served from cache, so a transient outage does not stick.
+ * Cache identity is (job, state hash, question set), where the state hash digests the exact input
+ * Jev is shown: the candidate profile, the structured analysis and the description excerpt. Showing
+ * the model byte-identical state and byte-identical questions a second time buys nothing, and any
+ * change to what it would see is a real reason to ask again - the employer edited the posting, the
+ * candidate changed their preferences, the analyser improved, or we changed what we are asking.
  *
- * A posting whose `content_hash` is unknown (NULL on either side) is treated as a miss rather than
- * a hit: guessing that unknown content matches unknown content is how stale answers survive.
+ * Failed rows are never served from cache, so a transient outage does not stick. An unknown state
+ * hash is a miss rather than a hit: guessing that unknown input matches unknown input is how stale
+ * answers survive.
  */
 export function findCachedEvaluation(
   db: DB,
-  opts: { jobId: number; contentHash: string | null; profileVersion: number; questionSet: string },
+  opts: { jobId: number; stateHash: string | null; questionSet: string },
 ): JobEvaluationRow | null {
-  if (!opts.contentHash) return null;
+  if (!opts.stateHash) return null;
   return (db
     .prepare(
       `SELECT * FROM job_evaluations
-        WHERE job_id = ? AND content_hash = ? AND profile_version = ? AND question_set = ?
-          AND error IS NULL
+        WHERE job_id = ? AND state_hash = ? AND question_set = ? AND error IS NULL
         ORDER BY id DESC LIMIT 1`,
     )
-    .get(opts.jobId, opts.contentHash, opts.profileVersion, opts.questionSet) as JobEvaluationRow | undefined) ?? null;
+    .get(opts.jobId, opts.stateHash, opts.questionSet) as JobEvaluationRow | undefined) ?? null;
 }
 
 export function getLatestJobEvaluation(db: DB, jobId: number): JobEvaluationRow | null {
@@ -112,13 +115,16 @@ export function getLatestJobEvaluation(db: DB, jobId: number): JobEvaluationRow 
 }
 
 /**
- * Eligible, undecided postings that have no current Jev evaluation. "Current" means same profile
- * version and same question set: a profile change or a question change makes an old answer stale.
- * Failed evaluations are retried, so a transient Cloudflare error does not permanently skip a job.
+ * Eligible, undecided postings, best score first: the pool the runner walks.
+ *
+ * This deliberately does NOT try to decide staleness. Whether an answer is still good depends on
+ * the state hash, which digests the candidate profile, the structured analysis and the description,
+ * and cannot be computed in SQL. The runner checks the cache per job and only spends a model call
+ * on a real miss, so returning an already-answered posting here costs nothing.
  */
 export function getJobsNeedingEvaluation(
   db: DB,
-  opts: { profileVersion: number; questionSet: string; minScore?: number; limit?: number },
+  opts: { minScore?: number; limit?: number } = {},
 ): Array<{ job_id: number; code: string; title: string; company_name: string | null }> {
   // Correlated subqueries rather than joins: a job can carry several job_matches rows and several
   // applications, and joining them multiplies the job into duplicates. That is not cosmetic here -
@@ -136,19 +142,10 @@ export function getJobsNeedingEvaluation(
              WHERE a.job_id = j.id
                AND a.status NOT IN ('DISCOVERED','MATCHED')
           )
-          AND NOT EXISTS (
-            SELECT 1 FROM job_evaluations e
-             WHERE e.job_id = j.id
-               AND e.profile_version = ?
-               AND e.question_set = ?
-               AND e.error IS NULL
-               -- A posting edited since we asked is a cache miss, so it is queued again.
-               AND (e.content_hash IS NOT NULL AND e.content_hash = j.content_hash)
-          )
         ORDER BY score DESC
         LIMIT ?`,
     )
-    .all(opts.minScore ?? 0, opts.profileVersion, opts.questionSet, opts.limit ?? 25) as Array<{
+    .all(opts.minScore ?? 0, opts.limit ?? 200) as Array<{
     job_id: number;
     code: string;
     title: string;
