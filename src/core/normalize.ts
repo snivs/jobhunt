@@ -84,8 +84,18 @@ export function normalizeText(s: string | null | undefined): string {
       .normalize("NFKD")
       .replace(/[̀-ͯ]/g, "")
       .toLowerCase()
-      .replace(/[^a-z0-9+#.\s]/g, " "),
-  );
+      // Keep any Unicode letter, digit or combining mark, not just ASCII. NFKD above already folds
+      // Latin accents down to a-z, so this changes nothing for Latin text; what it fixes is
+      // everything else. The previous [^a-z0-9+#.\s] erased non-Latin scripts entirely, so a
+      // company named テオリア・テクノロジーズ or Наука normalized to the empty string and the
+      // posting was then rejected at ingestion with "Company name is required". Twenty-one
+      // Japanese postings were dropped that way in a single run before this was found.
+      //
+      // \p{M} has to stay: the line above only strips the Latin combining range, and Japanese
+      // voiced sounds carry their dakuten as a separate mark after NFKD. Dropping it turned
+      // ジ into シ and ド into ト, quietly renaming the company. The NFC below puts them back.
+      .replace(/[^\p{L}\p{N}\p{M}+#.\s]/gu, " "),
+  ).normalize("NFC");
 }
 
 const COMPANY_SUFFIX = /\s+(inc|llc|ltd|limited|corp|corporation|co|company|gmbh|plc|ag|bv|srl|s a de c v|sa de cv|s de rl de cv|s a|sa|s l|sl|s r l|pty|oy|ab|as|nv|kk|llp|lp)$/;

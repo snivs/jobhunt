@@ -3,6 +3,7 @@ import type { SourceConfig } from "../src/config/index.js";
 import { Logger } from "../src/logging/index.js";
 import { HttpClient, SourceHttpError } from "../src/sources/http.js";
 import { cleanTitleSegment, parseHiringComment } from "../src/sources/hn-hiring.js";
+import { splitFwdTitle } from "../src/sources/fwddeploy.js";
 import { parseSalaryText, remotive } from "../src/sources/remotive.js";
 import { runDiscovery, resolveSearchTerms } from "../src/sources/runner.js";
 import { matchesTerms } from "../src/sources/types.js";
@@ -196,5 +197,21 @@ describe("Hacker News title parsing", () => {
     expect(got).not.toBeNull();
     expect(got!.title.length).toBeLessThanOrEqual(120);
     expect(long.startsWith(got!.title)).toBe(true);
+  });
+});
+
+describe("fwddeploy title parsing", () => {
+  it("takes company and location from the END, so hyphens inside the role survive", () => {
+    // Real titles from the feed. Splitting on every hyphen shreds "Engineer - I" and "(m/w/d)".
+    expect(splitFwdTitle("Forward Deployed Engineer - I - Botsync - Demak, Demak Regency, Indonesia"))
+      .toEqual({ title: "Forward Deployed Engineer - I", company: "Botsync", location: "Demak, Demak Regency, Indonesia" });
+    expect(splitFwdTitle("Staff Forward Deployed Engineer - Databricks - Berlin, Germany"))
+      .toEqual({ title: "Staff Forward Deployed Engineer", company: "Databricks", location: "Berlin, Germany" });
+    expect(splitFwdTitle("Forward Deployed Engineer - Greek, Czech, Turkish - Salesforce - Dublin, Ireland"))
+      .toEqual({ title: "Forward Deployed Engineer - Greek, Czech, Turkish", company: "Salesforce", location: "Dublin, Ireland" });
+  });
+
+  it("returns the whole string as the title when the convention does not hold", () => {
+    expect(splitFwdTitle("Forward Deployed Engineer")).toEqual({ title: "Forward Deployed Engineer", company: null, location: null });
   });
 });

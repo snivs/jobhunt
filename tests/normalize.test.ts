@@ -51,3 +51,35 @@ describe("job normalization", () => {
     expect(n.salary?.max).toBe(120000);
   });
 });
+
+describe("non-Latin company names", () => {
+  it("keeps scripts that are not Latin instead of erasing them", () => {
+    // These normalized to the empty string before 2026-09-27, so ingestion rejected the posting
+    // with "Company name is required" and 21 Japanese jobs were silently dropped in one run.
+    expect(normalizeCompanyName("グリッド")).toBe("グリッド");
+    expect(normalizeCompanyName("Наука")).toBe("наука");
+    expect(normalizeCompanyName("北京字节跳动")).toBe("北京字节跳动");
+    expect(normalizeCompanyName("테크놀로지")).toBe("테크놀로지");
+  });
+
+  it("keeps Japanese voiced marks, which decompose into separate combining characters", () => {
+    // Stripping every mark turned ジ into シ and ド into ト: a different company name.
+    expect(normalizeCompanyName("テオリア・テクノロジーズ")).toBe("テオリア テクノロジーズ");
+    expect(normalizeCompanyName("ジーニー")).toBe("ジーニー");
+  });
+
+  it("still folds Latin accents and strips punctuation exactly as before", () => {
+    expect(normalizeTitle("Migración a la Nube")).toBe("migracion a la nube");
+    expect(normalizeTitle("Ingeniería de Software")).toBe("ingenieria de software");
+    expect(normalizeTitle("Tech Lead — Code Plane [IC5]")).toBe("tech lead code plane");
+    expect(normalizeCompanyName("Grupo Cambher, S.A. de C.V.")).toBe("grupo cambher");
+    expect(normalizeCompanyName("Acme Inc.")).toBe("acme");
+  });
+
+  it("does not let symbols or emoji through", () => {
+    // Asserted on the company normalizer to isolate this from normalizeTitle, which separately
+    // strips parentheticals like "(Remote)".
+    expect(normalizeCompanyName("Acme 🚀 Labs")).toBe("acme labs");
+    expect(normalizeCompanyName("★ Nova ★")).toBe("nova");
+  });
+});
