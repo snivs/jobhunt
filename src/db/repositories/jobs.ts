@@ -235,20 +235,48 @@ const PATCHABLE: Array<keyof JobPatch> = [
   "status", "seniority", "work_mode", "employment_type", "country", "remote_scope", "language", "company_id", "description", "last_verified_at", "posted_at",
 ];
 
-export function updateJob(db: DB, id: number, patch: JobPatch): JobRow {
+export interface JobStatusEvent {
+  id: number;
+  job_id: number;
+  from_status: string | null;
+  to_status: string | null;
+  reason: string | null;
+  occurred_at: string;
+}
+
+/**
+ * Patches a job. A status change, or any `reason`, is also written to job_status_events, so the
+ * history says why a posting was closed and not only that it was. A reason with no status change
+ * is recorded against the current status, as a note on the record.
+ */
+export function updateJob(db: DB, id: number, patch: JobPatch, reason?: string | null): JobRow {
   const existing = getJob(db, id);
   if (!existing) throw new Error(`Job ${id} not found`);
+  const now = nowIso();
   const sets: string[] = [];
-  const params: Record<string, unknown> = { id, updated_at: nowIso() };
+  const params: Record<string, unknown> = { id, updated_at: now };
   for (const key of PATCHABLE) {
     if (patch[key] !== undefined) {
       sets.push(`${key} = @${key}`);
       params[key] = patch[key];
     }
   }
-  if (sets.length === 0) return existing;
-  db.prepare(`UPDATE jobs SET ${sets.join(", ")}, updated_at = @updated_at WHERE id = @id`).run(params);
+  const statusChanged = patch.status !== undefined && patch.status !== existing.status;
+  const note = reason?.trim() ? reason.trim() : null;
+  if (sets.length === 0 && !note) return existing;
+  db.transaction(() => {
+    if (sets.length > 0) db.prepare(`UPDATE jobs SET ${sets.join(", ")}, updated_at = @updated_at WHERE id = @id`).run(params);
+    if (statusChanged || note) {
+      db.prepare(
+        "INSERT INTO job_status_events (job_id, from_status, to_status, reason, occurred_at) VALUES (?, ?, ?, ?, ?)",
+      ).run(id, existing.status, patch.status ?? existing.status, note, now);
+    }
+  })();
   return getJob(db, id)!;
+}
+
+export function getJobStatusEvents(db: DB, jobId: number): JobStatusEvent[] {
+  return db.prepare("SELECT * FROM job_status_events WHERE job_id = ? ORDER BY id").all(jobId) as JobStatusEvent[];
 }
 
 export interface JobSearchFilters {

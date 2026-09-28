@@ -32,7 +32,7 @@ import {
 } from "../db/repositories/applications.js";
 import { getCompanyById, getCompanyByName, searchCompanies, updateCompany, upsertCompany } from "../db/repositories/companies.js";
 import { getCompensationStatistics, getJobCompensation, recordCompensation } from "../db/repositories/compensation.js";
-import { getJob, getJobVersions, searchJobs, updateJob, resolveJob } from "../db/repositories/jobs.js";
+import { getJob, getJobStatusEvents, getJobVersions, searchJobs, updateJob, resolveJob } from "../db/repositories/jobs.js";
 import { getMarketSnapshots, getMarketStatistics, getSourceStatistics, saveMarketSnapshot } from "../db/repositories/market.js";
 import { getLatestMatch, getMatchHistory, getMatchingJobs, recordMatch } from "../db/repositories/matches.js";
 import { buildScoringProfile, getCandidateProfile, getProfileRow, removeCandidateSkill, setCandidateSkill, setPreference, upsertProfile } from "../db/repositories/profile.js";
@@ -85,6 +85,13 @@ function ok(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data ?? null, null, 2) }] };
 }
 type ToolCallback = Parameters<typeof server.registerTool>[2];
+/**
+ * Registers a tool whose arguments are validated STRICTLY: an argument the tool does not declare is
+ * an error, not something to drop. The SDK wraps a raw shape in a non-strict object, which strips
+ * unknown keys in silence, and that is how update_job came to accept `notes` and throw it away, and
+ * how status changes sent to update_application vanished. A caller who passes the wrong argument
+ * now hears about it.
+ */
 function tool<S extends Shape>(name: string, description: string, shape: S, handler: (args: z.infer<z.ZodObject<S>>) => unknown): void {
   const callback = async (args: z.infer<z.ZodObject<S>>) => {
     try {
@@ -97,7 +104,7 @@ function tool<S extends Shape>(name: string, description: string, shape: S, hand
       return { content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }], isError: true };
     }
   };
-  server.registerTool(name, { description, inputSchema: shape }, callback as unknown as ToolCallback);
+  server.registerTool(name, { description, inputSchema: z.object(shape).strict() }, callback as unknown as ToolCallback);
 }
 
 const workMode = z.enum(["remote", "hybrid", "onsite", "unknown"]);
@@ -181,6 +188,7 @@ tool(
     latest_match: getLatestMatch(db, a.job_id),
     application: getApplicationByJob(db, a.job_id),
     versions: getJobVersions(db, a.job_id),
+    status_history: getJobStatusEvents(db, a.job_id),
   };
 });
 
@@ -232,7 +240,7 @@ tool(
 
 tool(
   "update_job",
-  "Patch job attributes (status, seniority, work mode, country, etc.). History is preserved; nothing is deleted.",
+  "Patch job attributes (status, seniority, work mode, country, etc.). History is preserved; nothing is deleted. Pass `reason` to record WHY: a status change or a reason is written to the job's status_history (returned by get_job).",
   {
     job_id: z.number().int(),
     status: jobStatus.optional(),
@@ -245,10 +253,11 @@ tool(
     company_id: z.number().int().nullable().optional(),
     description: z.string().nullable().optional(),
     last_verified_at: z.string().nullable().optional().describe("set to now when the posting was re-checked and is still open"),
+    reason: z.string().optional().describe("why the change was made, e.g. the evidence a posting is closed or ineligible; stored in status_history"),
   },
   (a) => {
-    const { job_id, ...patch } = a;
-    return updateJob(db, job_id, patch);
+    const { job_id, reason, ...patch } = a;
+    return { ...updateJob(db, job_id, patch, reason), status_history: getJobStatusEvents(db, job_id) };
   },
 );
 

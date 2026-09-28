@@ -103,4 +103,25 @@ describe("jobhunt-db MCP server (stdio round-trip)", () => {
     expect(stats.jobs.total).toBe(1);
     expect(stats.compensation.explicit.sample_size).toBe(1);
   }, 60_000);
+
+  it("rejects an argument a tool does not declare instead of dropping it", async () => {
+    // update_job once accepted `notes` and threw it away; the reason for a closure was lost.
+    const res = await client.callTool({ name: "update_job", arguments: { job_id: 1, status: "closed", notes: "lost in silence" } });
+    const r = res as { isError?: boolean; content: Array<{ text: string }> };
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toMatch(/notes|unrecognized/i);
+    const job = text(await client.callTool({ name: "get_job", arguments: { job_id: 1 } })) as { job: { status: string } };
+    expect(job.job.status).not.toBe("closed");
+  }, 60_000);
+
+  it("records why a job's status changed", async () => {
+    const res = text(await client.callTool({ name: "update_job", arguments: { job_id: 1, status: "closed", reason: "Remote only for candidates in Ontario, Canada" } })) as {
+      status: string;
+      status_history: Array<{ from_status: string; to_status: string; reason: string }>;
+    };
+    expect(res.status).toBe("closed");
+    expect(res.status_history.at(-1)).toMatchObject({ from_status: "active", to_status: "closed", reason: "Remote only for candidates in Ontario, Canada" });
+    const got = text(await client.callTool({ name: "get_job", arguments: { job_id: 1 } })) as { status_history: unknown[] };
+    expect(got.status_history).toHaveLength(1);
+  }, 60_000);
 });

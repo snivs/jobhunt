@@ -164,7 +164,7 @@ export async function verifyJob(db: DB, config: LoadedConfig, jobId: number, log
     logger.warn("verify failed", { job_id: jobId, error: errorToString(err) });
   }
   const now = nowIso();
-  const updated = result === "expired" ? updateJob(db, jobId, { status: "expired", last_verified_at: now }) : result === "active" ? updateJob(db, jobId, { last_verified_at: now }) : job;
+  const updated = result === "expired" ? updateJob(db, jobId, { status: "expired", last_verified_at: now }, `link check: ${source.key} reports the posting is gone`) : result === "active" ? updateJob(db, jobId, { last_verified_at: now }) : job;
   return { job: updated, result };
 }
 
