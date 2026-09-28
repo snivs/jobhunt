@@ -54,6 +54,7 @@ describe("geography the employer states in the body", () => {
     ["Headquarters: Remote, Canada\n** Open to remote within the East Coast only** At JFrog", "East Coast"],
     ["Headquarters: Remote, United States\nAt Squarespace, we empower our product teams", "United States"],
     ["Headquarters: Remote, Ontario, Canada\nAbout CircleCI Engineering", "Ontario, Canada"],
+    ["Headquarters: Remote-US-NY\nZoomInfo is where careers accelerate.", "US-NY"],
   ])("reads the restriction in %s", (text, place) => {
     expect(extractScope(text)?.text).toBe(place);
   });
@@ -104,6 +105,91 @@ describe("geography the employer states in the body", () => {
   it("flags in-office days as a manual check", () => {
     const signals = extractBodySignals("Hybrid employees currently go into the office 3 days per week on Tuesdays and Thursdays.");
     expect(signals.officeDays).toContain("3 days per week");
+  });
+});
+
+describe("postings written in Spanish", () => {
+  // VAC-15.984, Kavak, as Lever returns it once the `lists` sections are included.
+  const KAVAK = [
+    "Sobre el Rol",
+    "Buscamos Senior y Staff Back End Engineers para el equipo de Payments.",
+    "Responsabilidades",
+    "Diseñar, construir y mantener los sistemas de cash-in y cash-out.",
+    "Requisitos",
+    "Mínimo de 5 a 7 años de experiencia como software engineer",
+    "Dominio de Java o Go (indispensable).",
+    "Plus",
+    "Experiencia en fintech, neobancos o procesadores de pago.",
+    "Beneficios en México",
+    "15 días de vacaciones el primer año. Clases de inglés.",
+  ].join("\n");
+
+  it("reads Spanish headings as sections, and a bare 'Plus' as nice-to-have", () => {
+    const sections = segment(KAVAK).map((s) => s.section);
+    expect(sections[2]).toBe("responsibility");
+    expect(sections[4]).toBe("required");
+    expect(sections[7]).toBe("preferred");
+    expect(sections[9]).toBe("benefits");
+  });
+
+  it("grades Java and Go as required and reads the years", () => {
+    const { db } = testDb();
+    const a = analyzeJobRules(db, job(KAVAK));
+    expect(a.yearsExperienceRequired).toBe(5);
+    expect(a.skills.find((s) => s.slug === "java")?.mentionType).toBe("explicit_required");
+    expect(a.languages.find((l) => l.code === "en")).toBeUndefined();
+  });
+
+  it("does not read 'Plus stock options' as a heading", () => {
+    expect(segment("Requirements\nTypeScript.\nPlus stock options.").map((s) => s.section)).toEqual(["required", "required", "required"]);
+  });
+});
+
+describe("roles a lead would not take", () => {
+  const lead = sampleProfile({ seniority: "lead", yearsExperience: 15 });
+
+  it("rejects junior roles for a lead", () => {
+    const { db } = testDb();
+    const a = analyzeJobRules(db, job("Requirements\nTypeScript.", { seniority: "junior" }));
+    expect(scoreJob(lead, { ...a, title: "Developer Jr — Proyecto NetSuite" }, OPTIONS).hardConstraintFailures).toContain("Junior role for a lead candidate");
+  });
+
+  it("rejects functions outside engineering, but not engineering roles that mention them", () => {
+    const { db } = testDb();
+    const a = analyzeJobRules(db, job("Lead the team.", { seniority: "director" }));
+    expect(scoreJob(lead, { ...a, title: "Director de Sales Enablement" }, OPTIONS).hardConstraintFailures.some((f) => f.startsWith("Not an engineering role"))).toBe(true);
+    expect(scoreJob(lead, { ...a, title: "Software Engineer, Sales Platform" }, OPTIONS).hardConstraintFailures.some((f) => f.startsWith("Not an engineering role"))).toBe(false);
+  });
+});
+
+describe("where the same employer posted the role", () => {
+  const profile = sampleProfile({ hardConstraints: [{ type: "workable_from", country: "Mexico", acceptedScopes: ["latam", "latin america"] }] });
+
+  it("accepts a country code for the candidate's country (Kavak on Lever sends 'MX')", () => {
+    const { db } = testDb();
+    const a = analyzeJobRules(db, job("Build the marketplace.", { work_mode: "hybrid", country: "MX", remote_scope: null, location: "Mexico City" }));
+    expect(scoreJob(profile, a, OPTIONS).hardConstraintFailures).toEqual([]);
+  });
+
+  it("finds the Mexico copy behind a canonical posted for another country (Sezzle)", () => {
+    const { db } = testDb();
+    const alt = ["Brazil, Remote", "Chile, Remote", "Mexico, Remote", "Türkiye, Remote"].join("\n");
+    const without = analyzeJobRules(db, job("Accounting role.", { remote_scope: "Argentina, Remote", location: "Argentina, Remote" }));
+    const withAlt = analyzeJobRules(db, job("Accounting role.", { remote_scope: "Argentina, Remote", location: "Argentina, Remote", alt_locations: alt }));
+    expect(scoreJob(profile, without, OPTIONS).hardConstraintFailures.length).toBeGreaterThan(0);
+    expect(scoreJob(profile, withAlt, OPTIONS).hardConstraintFailures).toEqual([]);
+  });
+
+  it("accepts a hybrid role when another copy sits in an office in the candidate's country (Clara)", () => {
+    const { db } = testDb();
+    const a = analyzeJobRules(db, job("Fintech.", { work_mode: "hybrid", country: "Colombia", remote_scope: null, location: "Bogota / CUN / Colombia", alt_locations: "Mexico City / CDMX / México" }));
+    expect(scoreJob(profile, a, OPTIONS).hardConstraintFailures).toEqual([]);
+  });
+
+  it("does not let a global copy widen a restricted one", () => {
+    const { db } = testDb();
+    const a = analyzeJobRules(db, job("Role.", { remote_scope: "Ontario, Canada", location: "Ontario, Canada", alt_locations: "Anywhere in the World" }));
+    expect(scoreJob(profile, a, OPTIONS).hardConstraintFailures.length).toBeGreaterThan(0);
   });
 });
 

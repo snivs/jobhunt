@@ -78,6 +78,23 @@ describe("BambooHR careers", () => {
   });
 });
 
+describe("Lever description", () => {
+  it("includes the requirement lists, not only the opening", async () => {
+    const { leverDescription } = await import("../src/sources/ats.js");
+    const d = leverDescription({
+      descriptionPlain: "Sobre Kavak. Buscamos Staff Engineers.",
+      lists: [
+        { text: "Requisitos", content: "<li>Dominio de Java o Go (indispensable).</li>" },
+        { text: "Beneficios en México", content: "<li>Aguinaldo</li>" },
+      ],
+      additionalPlain: "Kavak es un empleador con igualdad de oportunidades.",
+    });
+    expect(d).toContain("Requisitos\nDominio de Java o Go (indispensable).");
+    expect(d).toContain("Beneficios en México");
+    expect(d!.startsWith("Sobre Kavak")).toBe(true);
+  });
+});
+
 describe("Workable careers widget", () => {
   const account = {
     name: "KoboToolbox",

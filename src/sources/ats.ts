@@ -78,6 +78,28 @@ interface LeverPosting {
   description?: string;
   categories?: { location?: string; team?: string; commitment?: string; department?: string };
   salaryRange?: { min?: number; max?: number; currency?: string; interval?: string };
+  lists?: Array<{ text?: string; content?: string }>;
+  additional?: string;
+  additionalPlain?: string;
+}
+
+/**
+ * Lever splits a posting across fields: `description` is only the opening, and the requirements,
+ * responsibilities and benefits arrive as `lists` of { text: heading, content: HTML }, with a
+ * closing `additional`. Reading `descriptionPlain` alone kept the introduction and dropped the
+ * requirements: Kavak's "Dominio de Java o Go (indispensable)" never reached the analysis.
+ */
+export function leverDescription(p: Pick<LeverPosting, "descriptionPlain" | "description" | "lists" | "additionalPlain" | "additional">): string | null {
+  const parts: string[] = [];
+  const opening = p.descriptionPlain ?? (p.description ? htmlToText(p.description) : null);
+  if (opening) parts.push(opening);
+  for (const l of p.lists ?? []) {
+    const body = l.content ? htmlToText(l.content) : null;
+    if (l.text || body) parts.push([l.text, body].filter(Boolean).join("\n"));
+  }
+  const closing = p.additionalPlain ?? (p.additional ? htmlToText(p.additional) : null);
+  if (closing) parts.push(closing);
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 export const lever: JobSource = {
@@ -100,7 +122,7 @@ export const lever: JobSource = {
           location: p.categories?.location ?? null,
           country: p.country ?? null,
           workMode: wp === "remote" ? "remote" : wp === "hybrid" ? "hybrid" : wp === "onsite" || wp === "on-site" ? "onsite" : null,
-          description: p.descriptionPlain ?? (p.description ? htmlToText(p.description) : null),
+          description: leverDescription(p),
           postedAt: new Date(p.createdAt).toISOString(),
           employmentType: /full/i.test(p.categories?.commitment ?? "") ? "full_time" : /part/i.test(p.categories?.commitment ?? "") ? "part_time" : /contract/i.test(p.categories?.commitment ?? "") ? "contract" : null,
           salary: sr && (sr.min || sr.max) ? { min: sr.min ?? null, max: sr.max ?? null, currency: sr.currency ?? null, period: (sr.interval ?? "per-year-salary").includes("year") ? "year" : (sr.interval ?? "").includes("month") ? "month" : (sr.interval ?? "").includes("hour") ? "hour" : "year" } : null,

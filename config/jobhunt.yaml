@@ -263,6 +263,16 @@ sources:
     boards: []
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 1 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
+  # Postings the candidate hands over directly (a link in chat). No adapter: nothing is fetched on a
+  # schedule; the agent records each one with create_job so it goes through the same analysis.
+  - key: manual
+    name: Candidate-submitted postings
+    kind: manual
+    enabled: true
+    automation_policy: discover_only
+    boards: []
+    rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 1 }
+    retry: { max_retries: 0, initial_backoff_ms: 1000, backoff_multiplier: 1, max_backoff_ms: 1000 }
   # Platforms whose terms prohibit third-party automation: discovery may only happen through
   # official means; automatic application is never attempted.
   - key: linkedin

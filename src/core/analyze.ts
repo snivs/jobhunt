@@ -41,6 +41,13 @@ const REQUIRED_CUES = [
   "who you are",
   "essential",
   "proven experience",
+  // Spanish: most postings from Mexican employers are written in it.
+  "requisitos",
+  "lo que buscamos",
+  "qué buscamos",
+  "que buscamos",
+  "requerimos",
+  "indispensable",
 ];
 
 const PREFERRED_CUES = [
@@ -58,6 +65,11 @@ const PREFERRED_CUES = [
   "advantageous",
   "preferred qualifications",
   "extra credit",
+  "deseable",
+  "se valora",
+  "valoramos",
+  "es un plus",
+  "suma puntos",
 ];
 
 /** Lines that read as responsibilities rather than requirements. */
@@ -72,6 +84,10 @@ const RESPONSIBILITY_CUES = [
   "day to day",
   "day-to-day",
   "in this role",
+  "responsabilidades",
+  "qué harás",
+  "que harás",
+  "tus funciones",
 ];
 
 const LEADERSHIP_RE =
@@ -86,6 +102,9 @@ const YEARS_RES = [
   /\b(\d{1,2})\s*\+\s*years?\b/i,
   /\b(\d{1,2})\s*(?:-|–|to)\s*\d{1,2}\s*years?\b/i,
   /\b(\d{1,2})\s+years?(?:\s+of)?\s+(?:professional\s+|relevant\s+|industry\s+)?experience\b/i,
+  // "Mínimo de 5 a 7 años de experiencia", "5+ años de experiencia"
+  /\bm[ií]nimo(?: de)?\s+(\d{1,2})\b[^.\n]{0,12}a[nñ]os/i,
+  /\b(\d{1,2})\s*\+?\s*a[nñ]os de experiencia/i,
 ];
 
 const TEAM_SIZE_RE = /\bteam of\s+(\d{1,2})\b|\b(\d{1,2})\s+(?:direct reports|engineers reporting)\b/i;
@@ -179,6 +198,9 @@ const BENEFIT_CUES = [
   "why you'll love",
   "what's in it for you",
   "compensation and benefits",
+  "beneficios",
+  "prestaciones",
+  "ofrecemos",
 ];
 
 export function segment(text: string): Segment[] {
@@ -195,7 +217,7 @@ export function segment(text: string): Segment[] {
     const head = lower.slice(0, 80);
     // Only short lines are headings; "benefits" inside a sentence is not a section change.
     if (line.length <= 60 && BENEFIT_CUES.some((c) => head.includes(c))) current = "benefits";
-    else if (PREFERRED_CUES.some((c) => head.includes(c))) current = "preferred";
+    else if (PREFERRED_CUES.some((c) => head.includes(c)) || /^plus\b(?!\s+(?:stock|equity|bonus))/.test(head)) current = "preferred";
     else if (REQUIRED_CUES.some((c) => head.includes(c))) current = "required";
     else if (RESPONSIBILITY_CUES.some((c) => head.includes(c))) current = "responsibility";
     out.push({ text: line, section: current });
@@ -286,6 +308,8 @@ export interface JobForAnalysis {
   remote_scope: string | null;
   employment_type: string | null;
   location: string | null;
+  /** Locations of the same employer's other copies of this posting (same source), newline-separated. */
+  alt_locations?: string | null;
 }
 
 /**
@@ -377,6 +401,7 @@ export function analyzeJobRules(
     practiceSignals,
     timezoneWindow: body.timezone,
     bodyNotes,
+    alternateLocations: job.alt_locations ? [...new Set(job.alt_locations.split("\n").map((l) => l.trim()).filter(Boolean))] : [],
   };
 }
 

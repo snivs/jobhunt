@@ -110,6 +110,12 @@ export interface JobAnalysis {
   timezoneWindow?: TimezoneWindow | null;
   /** Facts taken from the posting body that override the source's metadata, with their evidence. */
   bodyNotes?: string[];
+  /**
+   * Where the same employer posted the same role separately. Employers like Sezzle and Clara post
+   * one copy per country; deduplication keeps one as canonical, and without this the Mexico copy
+   * hid behind an Argentina or Colombia one and the role was rejected as unreachable.
+   */
+  alternateLocations?: string[];
 }
 
 export interface FactorScore {
@@ -253,6 +259,20 @@ function isWorldwideRemote(job: JobAnalysis): boolean {
   return job.workMode === "remote" && (!job.remoteScope || /world|global|anywhere/i.test(job.remoteScope));
 }
 
+/** ISO 3166 codes that sources send in place of country names (Lever sends "MX"). */
+const COUNTRY_CODES: Record<string, string> = {
+  mx: "mexico", mex: "mexico", us: "united states", usa: "united states", ca: "canada", br: "brazil", co: "colombia",
+  ar: "argentina", cl: "chile", pe: "peru", uy: "uruguay", gb: "united kingdom", uk: "united kingdom", ie: "ireland",
+  de: "germany", es: "spain", fr: "france", pt: "portugal", nl: "netherlands", pl: "poland", in: "india",
+};
+
+/** Lower-cased country name, whether the source gave a name ("Mexico", "México") or a code ("MX"). */
+export function countryName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const t = raw.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return COUNTRY_CODES[t] ?? t;
+}
+
 const GLOBAL_SCOPE_RE = /\b(worldwide|world|global|globally|anywhere)\b/i;
 
 /**
@@ -286,17 +306,23 @@ function scopeReaches(scope: string, country: string, acceptedScopes: string[]):
  */
 function evaluateWorkableFrom(job: JobAnalysis, hc: Extract<HardConstraint, { type: "workable_from" }>): { failure?: string; manual?: string } {
   const base = hc.country;
-  const baseLower = base.toLowerCase();
+  const baseLower = countryName(base)!;
   const accepted = hc.acceptedScopes ?? [];
-  const jobCountry = job.country?.toLowerCase() ?? null;
+  const jobCountry = countryName(job.country);
+  // Another copy of the same posting placed in the candidate's country settles it either way.
+  const alternates = job.alternateLocations ?? [];
+  const fold = (x: string) => x.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+  const alternateHere = alternates.some((l) => !GLOBAL_SCOPE_RE.test(l) && scopeReaches(fold(l), baseLower, accepted.map(fold)));
 
   if (job.workMode === "onsite" || job.workMode === "hybrid") {
+    if (alternateHere) return {};
     if (!jobCountry) return { manual: `${job.workMode} role with no country stated: confirm the workplace is in ${base}` };
     if (jobCountry !== baseLower) return { failure: `${job.workMode} in ${job.country}: would require relocating outside ${base}` };
     return {};
   }
 
   if (job.workMode === "remote") {
+    if (alternateHere) return {};
     const scope = job.remoteScope?.trim();
     if (scope && scopeStatesGeography(scope)) {
       if (scopeReaches(scope, base, accepted)) return {};
@@ -312,8 +338,8 @@ function evaluateWorkableFrom(job: JobAnalysis, hc: Extract<HardConstraint, { ty
 
 function scoreLocation(profile: CandidateProfile, job: JobAnalysis): Partial {
   const modeOk = job.workMode === "unknown" || profile.workModes.includes(job.workMode);
-  const countries = profile.acceptableCountries.map((c) => c.toLowerCase());
-  const jobCountry = job.country?.toLowerCase() ?? null;
+  const countries = profile.acceptableCountries.map((c) => countryName(c)!);
+  const jobCountry = countryName(job.country);
   const countryOk = jobCountry ? countries.includes(jobCountry) || countries.includes("*") : false;
   let score: number;
   let explanation: string;
@@ -541,8 +567,8 @@ function evaluateHardConstraints(
         break;
       }
       case "country": {
-        const jc = job.country?.toLowerCase();
-        const allowed = hc.allowed.map((c) => c.toLowerCase());
+        const jc = countryName(job.country);
+        const allowed = hc.allowed.map((c) => countryName(c)!);
         if (isWorldwideRemote(job) && hc.allowRemoteWorldwide !== false) break;
         if (jc && !allowed.includes(jc) && !allowed.includes("*")) failures.push(`Country ${job.country} not allowed`);
         break;
@@ -597,9 +623,22 @@ function evaluateHardConstraints(
  * requires and the candidate does not speak at all, and a time-zone window the posting enforces
  * that the candidate's own zone falls outside of. Both come from the posting body.
  */
+const NON_ENGINEERING_TITLE =
+  /\b(sales|partnerships?|marketing|recruit(?:er|ing)|talent acquisition|account (?:executive|manager)|customer success|business development|finance|accountant|accounting|legal|counsel|people partner|hr|human resources|comercial|ventas|mercadotecnia|contador|jur[ií]dico)\b/i;
+const ENGINEERING_TITLE = /\b(engineer(?:ing)?|developer|architect|software|sre|devops|technical|tech lead|cto|ingenier[oa]|desarrollador(?:a)?)\b/i;
+
 function evaluateBuiltInConstraints(profile: CandidateProfile, job: JobAnalysis): { failures: string[]; risks: string[] } {
   const failures: string[] = [];
   const risks: string[] = [];
+  // A lead with years of experience does not take a junior or internship role, and seniority is
+  // only one weighted factor, so without this "Developer Jr" topped the queue on 2026-09-27.
+  if ((job.seniority === "junior" || job.seniority === "intern") && SENIORITY_RANK[profile.seniority] >= SENIORITY_RANK.senior) {
+    failures.push(`${job.seniority === "intern" ? "Internship" : "Junior"} role for a ${profile.seniority} candidate`);
+  }
+  // Discovery terms such as "director" or "lead" also catch functions outside engineering.
+  if (NON_ENGINEERING_TITLE.test(job.title) && !ENGINEERING_TITLE.test(job.title)) {
+    failures.push(`Not an engineering role: "${job.title}"`);
+  }
   for (const req of job.languages) {
     if (!req.required) continue;
     const mine = profile.languages.find((l) => l.code.toLowerCase() === req.code.toLowerCase());

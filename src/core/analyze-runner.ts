@@ -55,6 +55,10 @@ export function runRuleAnalysis(
     .prepare(
       `SELECT j.id, j.title, j.description, j.seniority, j.work_mode, j.country, j.remote_scope,
               j.employment_type, j.location,
+              -- The employer's own per-country copies of this posting (same source only: an
+              -- aggregator's "Anywhere" copy must not widen what the employer itself restricted).
+              (SELECT group_concat(COALESCE(d.location, '') || COALESCE(' / ' || d.country, ''), char(10))
+                 FROM jobs d WHERE d.duplicate_of_job_id = j.id AND d.source_id = j.source_id) AS alt_locations,
               c.min_amount, c.max_amount, c.currency, c.period
          FROM jobs j
          LEFT JOIN (

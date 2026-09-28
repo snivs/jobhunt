@@ -110,7 +110,8 @@ const SCOPE_PATTERNS: RegExp[] = [
   // WeWorkRemotely prefixes every post with "Headquarters:". When it reads "Remote, <place>" it is
   // the role's region (CircleCI "Remote, Ontario, Canada", Squarespace "Remote, United States");
   // a bare city ("Warsaw, Poland") is the company's head office and says nothing about the role.
-  /\bheadquarters:[ \t]*remote(?:,[ \t]*|[ \t]+)([A-Z][A-Za-z .,-]{1,50})/i,
+  // ZoomInfo writes it with a hyphen: "Remote-US-NY".
+  /\bheadquarters:[ \t]*remote(?:,[ \t]*|[ \t]+|-)([A-Z][A-Za-z .,-]{1,50})/i,
 ];
 
 /** "compensation for US based candidates", "In the United States, ... pay zones", "US base salary range" */
