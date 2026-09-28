@@ -65,7 +65,13 @@ export function runRuleAnalysis(
          ) c ON c.job_id = j.id
         WHERE j.status = 'active'
           AND j.duplicate_of_job_id IS NULL
-          AND (@force = 1 OR NOT EXISTS (SELECT 1 FROM job_matches m WHERE m.job_id = j.id))
+          AND (
+                NOT EXISTS (SELECT 1 FROM job_matches m WHERE m.job_id = j.id)
+                -- force re-reads what rules produced, never what an agent read: a careful read
+                -- must not be overwritten by a pattern match just because the patterns improved.
+                OR (@force = 1 AND (SELECT m.analysis_json FROM job_matches m WHERE m.job_id = j.id ORDER BY m.id DESC LIMIT 1)
+                                   LIKE '%rule-extracted%')
+              )
         ORDER BY j.discovered_at DESC
         LIMIT @limit`,
     )

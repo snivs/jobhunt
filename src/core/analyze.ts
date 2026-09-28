@@ -1,5 +1,6 @@
 import type { DB } from "../db/index.js";
 import { findSkillByAlias } from "../db/repositories/skills.js";
+import { extractBodySignals } from "./body-signals.js";
 import { htmlToText } from "./normalize.js";
 import type { JobAnalysis, JobSkillRequirement, LanguageLevel } from "./scoring.js";
 
@@ -89,19 +90,96 @@ const YEARS_RES = [
 
 const TEAM_SIZE_RE = /\bteam of\s+(\d{1,2})\b|\b(\d{1,2})\s+(?:direct reports|engineers reporting)\b/i;
 
-const LANGUAGE_PATTERNS: Array<{ code: string; re: RegExp; level: LanguageLevel }> = [
-  { code: "en", re: /\b(fluent|native|professional|business|excellent|strong)\s+(?:written and spoken\s+)?english\b/i, level: "c1" },
-  { code: "en", re: /\benglish\b/i, level: "b2" },
-  { code: "es", re: /\b(fluent|native|professional|business)\s+spanish\b/i, level: "c1" },
-  { code: "es", re: /\bspanish\b/i, level: "b2" },
-  { code: "pt", re: /\bportuguese\b/i, level: "b2" },
+/**
+ * Languages a posting can demand. The list used to be English, Spanish and Portuguese only, so a
+ * posting that required "Fluency in Polish and English (minimum C1 level)" was scored as if it had
+ * no language requirement: the factor did not apply, the weights renormalised without it, and the
+ * posting (VAC-1.72) scored 70.7 and got a full company research before anyone read the line.
+ */
+const LANGUAGES: Array<{ code: string; names: string[] }> = [
+  { code: "en", names: ["english"] },
+  { code: "es", names: ["spanish", "español", "castellano"] },
+  { code: "pt", names: ["portuguese", "português"] },
+  { code: "pl", names: ["polish"] },
+  { code: "de", names: ["german", "deutsch"] },
+  { code: "fr", names: ["french", "français"] },
+  { code: "nl", names: ["dutch"] },
+  { code: "it", names: ["italian"] },
+  { code: "sv", names: ["swedish"] },
+  { code: "cs", names: ["czech"] },
+  { code: "ro", names: ["romanian"] },
+  { code: "ru", names: ["russian"] },
+  { code: "uk", names: ["ukrainian"] },
+  { code: "tr", names: ["turkish"] },
+  { code: "ar", names: ["arabic"] },
+  { code: "he", names: ["hebrew"] },
+  { code: "hi", names: ["hindi"] },
+  { code: "ja", names: ["japanese", "日本語"] },
+  { code: "ko", names: ["korean", "한국어"] },
+  { code: "zh", names: ["mandarin", "chinese", "中文"] },
 ];
+
+// Word boundaries only mean something next to Latin letters, so the CJK terms go in unbounded.
+const FLUENCY_WORDS = "(?:\\b(?:fluent|fluency|native|proficient|proficiency|professional|business|excellent|strong|advanced)\\b|ネイティブ|ビジネスレベル|流暢)";
+const LEVEL_WORDS = "(?:\\b(?:C1|C2|fluent|fluency|native|proficien\\w*|N1|N2)\\b|ネイティブ|ビジネス)";
+
+function languagePatterns(name: string): { fluent: RegExp; bare: RegExp } {
+  const latin = /^[a-zà-ÿ]+$/i.test(name);
+  const n = latin ? `\\b${name}\\b` : name;
+  return {
+    // "Fluency in Polish and English", "Polish (minimum C1 level)", "business-level Japanese"
+    fluent: new RegExp(`(?:${FLUENCY_WORDS}[^.;:。\\n]{0,60}${n})|(?:${n}[^.;:。\\n]{0,30}${LEVEL_WORDS})`, "i"),
+    bare: new RegExp(n, "i"),
+  };
+}
+
+/**
+ * Reads language requirements section by section. A fluency statement counts wherever it appears,
+ * except in the benefits; a bare mention only counts inside requirements or nice-to-haves. That
+ * keeps "English lessons with a native speaker ... learn English, Spanish, and German", a real
+ * benefits line from the same posting, from turning into three language requirements.
+ */
+export function extractLanguages(segments: Segment[]): JobAnalysis["languages"] {
+  const found = new Map<string, { code: string; minLevel: LanguageLevel; required: boolean }>();
+  const rank: Record<string, number> = { b2: 1, c1: 2 };
+  for (const seg of segments) {
+    if (seg.section === "benefits") continue;
+    for (const { code, names } of LANGUAGES) {
+      for (const name of names) {
+        const { fluent, bare } = languagePatterns(name);
+        let level: LanguageLevel | null = null;
+        if (fluent.test(seg.text)) level = "c1";
+        else if ((seg.section === "required" || seg.section === "preferred") && bare.test(seg.text)) level = "b2";
+        if (!level) continue;
+        const required = seg.section !== "preferred";
+        const prev = found.get(code);
+        if (!prev || rank[level]! > rank[prev.minLevel]! || (required && !prev.required)) {
+          found.set(code, { code, minLevel: prev && rank[prev.minLevel]! > rank[level]! ? prev.minLevel : level, required: required || (prev?.required ?? false) });
+        }
+      }
+    }
+  }
+  return [...found.values()];
+}
 
 /** Splits the posting into lines, carrying down the most recent section cue. */
 interface Segment {
   text: string;
-  section: "required" | "preferred" | "responsibility" | "other";
+  section: "required" | "preferred" | "responsibility" | "benefits" | "other";
 }
+
+/** Headings that open the perks. Anything under them describes the employer, not the candidate. */
+const BENEFIT_CUES = [
+  "benefits",
+  "perks",
+  "what we offer",
+  "we offer",
+  "our offer",
+  "why join",
+  "why you'll love",
+  "what's in it for you",
+  "compensation and benefits",
+];
 
 export function segment(text: string): Segment[] {
   const lines = text
@@ -115,7 +193,9 @@ export function segment(text: string): Segment[] {
     const lower = line.toLowerCase();
     // A cue near the start of a line is a heading; one buried mid-sentence is not.
     const head = lower.slice(0, 80);
-    if (PREFERRED_CUES.some((c) => head.includes(c))) current = "preferred";
+    // Only short lines are headings; "benefits" inside a sentence is not a section change.
+    if (line.length <= 60 && BENEFIT_CUES.some((c) => head.includes(c))) current = "benefits";
+    else if (PREFERRED_CUES.some((c) => head.includes(c))) current = "preferred";
     else if (REQUIRED_CUES.some((c) => head.includes(c))) current = "required";
     else if (RESPONSIBILITY_CUES.some((c) => head.includes(c))) current = "responsibility";
     out.push({ text: line, section: current });
@@ -232,15 +312,27 @@ export function analyzeJobRules(
   const teamMatch = text.match(TEAM_SIZE_RE);
   const teamSize = teamMatch ? Number(teamMatch[1] ?? teamMatch[2]) : null;
 
-  const languages: JobAnalysis["languages"] = [];
-  const seenLang = new Set<string>();
-  for (const { code, re, level } of LANGUAGE_PATTERNS) {
-    if (seenLang.has(code)) continue;
-    if (re.test(text)) {
-      seenLang.add(code);
-      languages.push({ code, minLevel: level, required: true });
-    }
+  const languages = extractLanguages(segments);
+
+  // What the employer says in its own words beats the aggregator's metadata. See body-signals.ts.
+  const body = extractBodySignals(text);
+  const bodyNotes: string[] = [];
+  const manual: string[] = [];
+  let remoteScope = job.remote_scope ?? job.location ?? null;
+  if (body.scope) {
+    remoteScope = body.scope.text;
+    bodyNotes.push(`scope from the posting body: "${body.scope.evidence}"`);
   }
+  if (!compensation && body.salary) {
+    const { evidence, label, ...comp } = body.salary;
+    compensation = comp;
+    bodyNotes.push(`compensation from the posting body${label ? ` (${label})` : ""}: "${evidence}"`);
+  }
+  if (body.legalEntityClause) {
+    manual.push(`Employer hires only where it has a legal entity: confirm it has one in the candidate's country ("${body.legalEntityClause}")`);
+  }
+  if (body.officeDays) manual.push(`Posting mentions in-office days: confirm the role is remote ("${body.officeDays}")`);
+  if (body.countryPay) manual.push(`Published pay is stated for one country: confirm the employer hires in the candidate's, and at what rate ("${body.countryPay}")`);
 
   const authMatch = text.match(AUTHORIZATION_RE);
   const workAuthorizationRequired = authMatch ? [collapse(authMatch[0])] : null;
@@ -257,10 +349,11 @@ export function analyzeJobRules(
   if (years === null) missing.push("years_experience_required");
   if (!compensation) missing.push("compensation");
   if (!job.seniority || job.seniority === "unknown") missing.push("seniority");
-  if (!job.remote_scope && job.work_mode === "remote") missing.push("remote_scope");
+  if (!job.remote_scope && !body.scope && job.work_mode === "remote") missing.push("remote_scope");
   if (responsibilities.length === 0) missing.push("responsibilities");
   // Said plainly, so a reader of the stored analysis knows how it was produced.
   missing.push("rule-extracted: not read by an agent");
+  missing.push(...manual);
 
   return {
     jobId: job.id,
@@ -268,7 +361,7 @@ export function analyzeJobRules(
     seniority: (job.seniority ?? "unknown") as JobAnalysis["seniority"],
     workMode: (job.work_mode ?? "unknown") as JobAnalysis["workMode"],
     country: job.country,
-    remoteScope: job.remote_scope ?? job.location ?? null,
+    remoteScope,
     employmentType: job.employment_type ?? "unknown",
     skills,
     yearsExperienceRequired: years,
@@ -282,6 +375,8 @@ export function analyzeJobRules(
     workAuthorizationRequired,
     missingInformation: missing,
     practiceSignals,
+    timezoneWindow: body.timezone,
+    bodyNotes,
   };
 }
 

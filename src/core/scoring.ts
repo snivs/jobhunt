@@ -1,4 +1,5 @@
 import type { ScoringFactor, ScoringWeights } from "../config/index.js";
+import { utcOffsetHours, type TimezoneWindow } from "./body-signals.js";
 import type { Seniority, WorkMode } from "./normalize.js";
 
 export type SkillLevel = "expert" | "advanced" | "intermediate" | "basic" | "learning";
@@ -105,6 +106,10 @@ export interface JobAnalysis {
   missingInformation: string[];
   /** Practice keywords found in the posting body. Optional: analyses stored before 2026-09-27 lack it. */
   practiceSignals?: string[];
+  /** A time-zone window the posting demands, read from its body. Optional for the same reason. */
+  timezoneWindow?: TimezoneWindow | null;
+  /** Facts taken from the posting body that override the source's metadata, with their evidence. */
+  bodyNotes?: string[];
 }
 
 export interface FactorScore {
@@ -587,6 +592,32 @@ function evaluateHardConstraints(
   return { failures, manualChecks };
 }
 
+/**
+ * Rules that need no configuration because no candidate could meet them: a language the posting
+ * requires and the candidate does not speak at all, and a time-zone window the posting enforces
+ * that the candidate's own zone falls outside of. Both come from the posting body.
+ */
+function evaluateBuiltInConstraints(profile: CandidateProfile, job: JobAnalysis): { failures: string[]; risks: string[] } {
+  const failures: string[] = [];
+  const risks: string[] = [];
+  for (const req of job.languages) {
+    if (!req.required) continue;
+    const mine = profile.languages.find((l) => l.code.toLowerCase() === req.code.toLowerCase());
+    if (!mine) failures.push(`Requires ${req.code.toUpperCase()} at ${req.minLevel.toUpperCase()}; the candidate does not speak it`);
+  }
+  const tz = job.timezoneWindow;
+  const home = profile.location.timezone;
+  if (tz && home) {
+    const offset = utcOffsetHours(home);
+    // One hour of slack either side absorbs daylight saving on the employer's side.
+    if (offset !== null && (offset < tz.baseOffset - tz.plusMinus - 1 || offset > tz.baseOffset + tz.plusMinus + 1)) {
+      const msg = `Requires ${tz.zone} +/-${tz.plusMinus}h; ${home} is UTC${offset >= 0 ? "+" : ""}${offset} ("${tz.evidence}")`;
+      (tz.hard ? failures : risks).push(msg);
+    }
+  }
+  return { failures, risks };
+}
+
 export interface ScoringOptions {
   weights: ScoringWeights;
   minimumScore: number;
@@ -644,6 +675,9 @@ export function scoreJob(profile: CandidateProfile, job: JobAnalysis, options: S
   if (job.workMode === "unknown" && !missingInformation.includes("work_mode")) missingInformation.push("work_mode");
 
   const { failures: hardConstraintFailures, manualChecks } = evaluateHardConstraints(profile, job, comp);
+  const builtIn = evaluateBuiltInConstraints(profile, job);
+  hardConstraintFailures.push(...builtIn.failures);
+  risks.push(...builtIn.risks);
   const eligible = hardConstraintFailures.length === 0 && overallScore >= options.minimumScore;
   for (const m of manualChecks) if (!missingInformation.includes(m)) missingInformation.push(m);
 
