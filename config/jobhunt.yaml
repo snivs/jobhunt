@@ -245,6 +245,24 @@ sources:
       "company:examplestartup": Example Startup
     rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 2 }
     retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
+  # BambooHR and Workable public careers endpoints (read-only). Boards are company subdomains /
+  # account slugs, e.g. "acme" for acme.bamboohr.com or apply.workable.com/acme.
+  - key: bamboohr
+    name: BambooHR Careers
+    kind: ats
+    enabled: true
+    automation_policy: discover_only
+    boards: []
+    rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 1 }
+    retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
+  - key: workable
+    name: Workable Careers
+    kind: ats
+    enabled: true
+    automation_policy: discover_only
+    boards: []
+    rate_limits: { requests_per_second: 1, requests_per_minute: 30, requests_per_hour: 500, concurrency: 1 }
+    retry: { max_retries: 3, initial_backoff_ms: 1000, backoff_multiplier: 2, max_backoff_ms: 20000 }
   # Platforms whose terms prohibit third-party automation: discovery may only happen through
   # official means; automatic application is never attempted.
   - key: linkedin
