@@ -182,6 +182,21 @@ describe("excluded_responsibility and unevaluable custom constraints", () => {
   });
 });
 
+describe("work_authorization hard constraint", () => {
+  const profile = sampleProfile({ hardConstraints: [{ type: "work_authorization", regions: ["Mexico"] }] });
+
+  it("accepts a stored phrase that names a region the candidate holds", () => {
+    // AlertMedia's wording, typo included: the analyzer keeps the whole phrase, not the region.
+    const r = scoreJob(profile, sampleAnalysis({ workAuthorizationRequired: ["right to work in México with sponsorship now and in the future"] }), options);
+    expect(r.hardConstraintFailures.join(" ")).not.toMatch(/Work authorization/);
+  });
+
+  it("still rejects a phrase that names another country", () => {
+    const r = scoreJob(profile, sampleAnalysis({ workAuthorizationRequired: ["must be authorized to work in the United States"] }), options);
+    expect(r.hardConstraintFailures.join(" ")).toMatch(/Work authorization/);
+  });
+});
+
 describe("practice_match: scoring how the work is described", () => {
   const withKeywords = (extra: Partial<CandidateProfile> = {}) =>
     sampleProfile({ practiceKeywords: ["evaluation harness", "spec-driven development", "agent reliability", "human-in-the-loop"], ...extra });

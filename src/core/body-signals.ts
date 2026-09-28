@@ -92,6 +92,8 @@ const SCOPE_PATTERNS: RegExp[] = [
   /\bremotely? (?:only )?for (?:candidates|applicants|people|those) (?:located|based|residing|living) in (?:the )?([^.;\n]{2,70})/i,
   // "Candidates must be located in the United States", "must reside within Canada"
   /\b(?:must|need to|required to) (?:be )?(?:located|based|reside|residing|live|living) (?:in|within) (?:the )?([^.;\n]{2,60})/i,
+  // Kinaxis: "You can work from home and be located anywhere in Canada or the US."
+  /\b(?:be|are) (?:located|based) anywhere (?:in|within|across) (?:the )?([^.;\n]{2,60})/i,
   // Huntress: "Location: Remote Ireland", "Location: Remote - US"
   // Same line only: "Location: Remote" followed by a new paragraph must not swallow the paragraph.
   /\blocation:[ \t]*remote[ \t]*[-–,(]?[ \t]*([A-Z][A-Za-z .,&-]{1,50})/i,

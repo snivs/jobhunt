@@ -88,16 +88,18 @@ interface LeverPosting {
  * responsibilities and benefits arrive as `lists` of { text: heading, content: HTML }, with a
  * closing `additional`. Reading `descriptionPlain` alone kept the introduction and dropped the
  * requirements: Kavak's "Dominio de Java o Go (indispensable)" never reached the analysis.
+ * The plain fields can come back as empty strings next to a full HTML body (Yuno), so an empty
+ * plain field falls through to the HTML instead of winning.
  */
 export function leverDescription(p: Pick<LeverPosting, "descriptionPlain" | "description" | "lists" | "additionalPlain" | "additional">): string | null {
   const parts: string[] = [];
-  const opening = p.descriptionPlain ?? (p.description ? htmlToText(p.description) : null);
+  const opening = p.descriptionPlain || (p.description ? htmlToText(p.description) : null);
   if (opening) parts.push(opening);
   for (const l of p.lists ?? []) {
     const body = l.content ? htmlToText(l.content) : null;
     if (l.text || body) parts.push([l.text, body].filter(Boolean).join("\n"));
   }
-  const closing = p.additionalPlain ?? (p.additional ? htmlToText(p.additional) : null);
+  const closing = p.additionalPlain || (p.additional ? htmlToText(p.additional) : null);
   if (closing) parts.push(closing);
   return parts.length ? parts.join("\n\n") : null;
 }

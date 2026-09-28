@@ -93,6 +93,19 @@ describe("Lever description", () => {
     expect(d).toContain("Beneficios en México");
     expect(d!.startsWith("Sobre Kavak")).toBe(true);
   });
+
+  it("reads the HTML body when the plain fields are empty strings", async () => {
+    const { leverDescription } = await import("../src/sources/ats.js");
+    const d = leverDescription({
+      descriptionPlain: "",
+      description: "<p>Yuno builds payment infrastructure.</p>",
+      lists: [],
+      additionalPlain: "",
+      additional: "<p>Remote across Europe.</p>",
+    });
+    expect(d).toContain("Yuno builds payment infrastructure.");
+    expect(d).toContain("Remote across Europe.");
+  });
 });
 
 describe("Workable careers widget", () => {

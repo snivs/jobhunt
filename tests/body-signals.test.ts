@@ -75,6 +75,11 @@ describe("geography the employer states in the body", () => {
   it("ignores phrases that name no place, and scopes that are global", () => {
     expect(extractScope("Candidates must be located in a quiet place with good internet.")).toBeNull();
     expect(extractScope("This role can be performed remotely for candidates located anywhere in the world.")).toBeNull();
+    expect(extractScope("You can work from home and be located anywhere in the world.")).toBeNull();
+  });
+
+  it("reads 'be located anywhere in' as a scope (Kinaxis)", () => {
+    expect(extractScope("This is a remote position. You can work from home and be located anywhere in Canada or the US.")?.text).toBe("Canada or the US");
   });
 
   it("rejects the job for a candidate who cannot work from there", () => {

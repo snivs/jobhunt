@@ -583,8 +583,15 @@ function evaluateHardConstraints(
       }
       case "work_authorization": {
         if (job.workAuthorizationRequired && job.workAuthorizationRequired.length > 0) {
-          const regions = hc.regions.map((x) => x.toLowerCase());
-          const ok = job.workAuthorizationRequired.some((r) => regions.includes(r.toLowerCase()));
+          // The analyzer stores the phrase it matched ("right to work in Mexico without sponsorship
+          // now and in the future"), not a bare region, so a region the candidate holds counts when
+          // the phrase names it.
+          const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+          const regions = hc.regions.map(fold);
+          const ok = job.workAuthorizationRequired.some((r) => {
+            const phrase = fold(r);
+            return regions.some((g) => phrase === g || new RegExp(`\\b${g.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(phrase));
+          });
           if (!ok) failures.push(`Work authorization required for ${job.workAuthorizationRequired.join("/")}`);
         }
         break;
