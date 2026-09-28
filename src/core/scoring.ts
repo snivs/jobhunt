@@ -116,6 +116,13 @@ export interface JobAnalysis {
    * hid behind an Argentina or Colombia one and the role was rejected as unreachable.
    */
   alternateLocations?: string[];
+  /**
+   * Set when this analysis was read from one of those copies rather than from the canonical
+   * posting: the copies can differ in more than the place (Cognition's LATAM role asks for
+   * Portuguese in the Sao Paulo copy and Spanish in the Mexico City one), so the canonical being
+   * rejected says nothing about a copy the candidate can take. The hand-off must point here.
+   */
+  scoredCopy?: { jobId: number; code: string | null; location: string | null; url: string; canonicalFailures: string[] };
 }
 
 export interface FactorScore {

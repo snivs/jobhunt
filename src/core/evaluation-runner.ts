@@ -92,7 +92,10 @@ export async function runEvaluations(
       summary.skipped_no_analysis++;
       continue;
     }
-    const hash = stateHash(profile, analysis, job?.description ?? null);
+    // When the match was read from one of the employer's other copies, Jev reads that copy too:
+    // asking it about the canonical text would re-ask the question the copy already answered.
+    const described = analysis.scoredCopy ? getJob(db, analysis.scoredCopy.jobId) ?? job : job;
+    const hash = stateHash(profile, analysis, described?.description ?? null);
 
     // Checked on every path, including an explicit job_ids request, so asking about the same
     // posting twice costs nothing. `force` is the way to mean it.
@@ -113,7 +116,7 @@ export async function runEvaluations(
     }
 
     try {
-      const answers = await evaluateJob(profile, analysis, job?.description ?? null, opts.env);
+      const answers = await evaluateJob(profile, analysis, described?.description ?? null, opts.env);
       recordJobEvaluation(db, {
         jobId: t.job_id,
         runId: opts.runId ?? null,
