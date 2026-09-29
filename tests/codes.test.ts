@@ -29,6 +29,15 @@ describe("job short codes (VAC-<run>.<job>)", () => {
     expect(updated.job.discovered_run_id).toBe(run.id);
   });
 
+  it("does not merge two postings with different ids whose URLs normalize alike", () => {
+    const { db } = testDb();
+    // Mail-thread links differ only after '#', which canonicalization drops.
+    const a = ingestRawJob(db, rawJob({ sourceKey: "manual", externalId: "aiapply:a", url: "https://mail.example.com/inbox#thread-a", title: "AI Developer" }));
+    const b = ingestRawJob(db, rawJob({ sourceKey: "manual", externalId: "aiapply:b", url: "https://mail.example.com/inbox#thread-b", title: "Senior AI Engineer", companyName: "Other Co" }));
+    expect(b.outcome).toBe("created");
+    expect(b.job.id).not.toBe(a.job.id);
+  });
+
   it("uses run 0 when ingested outside a run and resolves by id, numeric string or code", () => {
     const { db } = testDb();
     const created = ingestRawJob(db, rawJob());

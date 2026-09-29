@@ -97,7 +97,12 @@ export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string; runI
       existing = db.prepare("SELECT * FROM jobs WHERE source_id = ? AND external_id = ?").get(source.id, job.externalId) as JobRow | undefined;
     }
     if (!existing) {
-      existing = db.prepare("SELECT * FROM jobs WHERE source_id = ? AND canonical_url = ?").get(source.id, job.canonicalUrl) as JobRow | undefined;
+      // The URL identifies a posting only when the ids cannot tell: a row that already carries a
+      // different external id is a different posting, even if both URLs normalize alike (links
+      // that differ only after '#', such as mail threads recorded for postings the candidate sent).
+      existing = db
+        .prepare("SELECT * FROM jobs WHERE source_id = ? AND canonical_url = ? AND (external_id IS NULL OR ? IS NULL)")
+        .get(source.id, job.canonicalUrl, job.externalId ?? null) as JobRow | undefined;
     }
     const companyId = job.companyName ? upsertCompany(db, { name: job.companyName }).company.id : null;
 
@@ -151,9 +156,15 @@ export function upsertJob(db: DB, job: NormalizedJob, opts: { now?: string; runI
     const dup = db
       .prepare(
         `SELECT id FROM jobs WHERE duplicate_of_job_id IS NULL AND status = 'active'
-           AND (canonical_url = ? OR dedup_key = ?) ORDER BY discovered_at ASC LIMIT 1`,
+           AND (
+                 (canonical_url = @url
+                   -- same source, different id: a different posting behind an alike-normalized URL
+                   AND NOT (source_id = @source AND external_id IS NOT NULL AND @ext IS NOT NULL AND external_id <> @ext))
+                 OR dedup_key = @dedup
+               )
+         ORDER BY discovered_at ASC LIMIT 1`,
       )
-      .get(job.canonicalUrl, job.dedupKey) as { id: number } | undefined;
+      .get({ url: job.canonicalUrl, dedup: job.dedupKey, source: source.id, ext: job.externalId ?? null }) as { id: number } | undefined;
 
     const res = db
       .prepare(
