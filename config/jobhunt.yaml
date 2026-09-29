@@ -195,6 +195,12 @@ sources:
       - example.wd5/ExampleExternalCareerSite
     options:
       "company:example.wd5/ExampleExternalCareerSite": Example Corp
+      # Optional: read only one country's postings on every board (e.g. Mexico). A board without a
+      # facet for that country is skipped, never searched worldwide.
+      # country: Mexico
+      # Optional, any source: ceiling on postings per discovery (default 200). Raise it when many
+      # boards are configured, or the last ones are cut.
+      # max_jobs: 400
       max_per_board: 40
       fetch_details: true
     rate_limits: { requests_per_second: 0.5, requests_per_minute: 20, requests_per_hour: 200, concurrency: 1 }
