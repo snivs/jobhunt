@@ -103,7 +103,9 @@ export async function runDiscovery(db: DB, config: LoadedConfig, opts: Discovery
       finish({ ...base, status: "skipped", error: "no boards configured" });
       continue;
     }
-    const ctx = makeContext(source, terms, opts.limit ?? 200, log, env);
+    // A multi-board source can declare a higher ceiling (`options.max_jobs`): the adapters cut at the
+    // limit after reading every board, so a default that fits one board silently drops the last ones.
+    const ctx = makeContext(source, terms, opts.limit ?? (Number(source.options.max_jobs) || 200), log, env);
     try {
       log.info("discovery start", { terms, limit: ctx.limit });
       const raw = await adapter.fetch(ctx);
